@@ -1,0 +1,30 @@
+{
+  "name": "delulu",
+  "description": "Session continuity for Claude Code, without reloading the session.",
+  "owner": {
+    "name": "Karan Kumar",
+    "url": "https://github.com/karankumar24"
+  },
+  "plugins": [
+    {
+      "name": "delulu",
+      "description": "/delulu:handoff captures a session into a compact handoff. /delulu:resume loads it in a fresh window, so you carry on without re-explaining and without replaying the transcript into your context.",
+      "source": "./plugin",
+      "category": "productivity",
+      "homepage": "https://github.com/karankumar24/delulu",
+      "repository": "https://github.com/karankumar24/delulu",
+      "license": "MIT",
+      "author": {
+        "name": "Karan Kumar",
+        "url": "https://github.com/karankumar24"
+      },
+      "keywords": [
+        "handoff",
+        "resume",
+        "session-continuity",
+        "context",
+        "claude-code"
+      ]
+    }
+  ]
+}

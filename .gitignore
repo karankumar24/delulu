@@ -1,0 +1,59 @@
+# dependencies / build output (covers app/ subtree too — patterns are unanchored)
+# No trailing slash on node_modules: `node_modules/` matches a DIRECTORY only, and the setup this
+# repo documents symlinks `app/node_modules` — a symlink is not a directory, so git listed it as
+# untracked and one `git add -A` would have committed it.
+node_modules
+dist/
+
+# logs / OS
+*.log
+.DS_Store
+Thumbs.db
+
+# secrets / env — NEVER commit (preventive; nothing of the sort is tracked today)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.keystore
+secrets.json
+**/*.secret.*
+
+# editor / IDE
+.idea/
+.vscode/
+*.swp
+
+# scratch experiments + atomic-write temp files
+_*.mts
+_*.ts
+*.tmp
+*.tmp.*
+coverage/
+
+# local-only Claude Code settings (permissions allowlist for this machine)
+.claude/settings.local.json
+.claude/settings.local.json.*
+.delulu-handoff/
+
+# Claude Code's own per-machine state under .claude/. These were covered only by this clone's
+# `.git/info/exclude`, which is not committed and does not survive a clone — so they were ignored
+# here and UNTRACKED-BUT-UNIGNORED for anybody else, which is the same wrong-scope reasoning that
+# left 105MB of clones exposed above. `.claude/commands/` and `.claude/agents/` stay trackable:
+# those are project configuration a contributor should get.
+.claude/worktrees/
+.claude/checkpoints/
+.claude/mailbox/
+.claude/routines/.state/
+.claude/scheduled_tasks.json
+.claude/scheduled_tasks.lock
+.claude/agent-registry.json
+.claude/agent-memory-local
+.claude/first-run
+.claude/assistant-daemon-state.json
+
+# Local scratch kept beside the repo and never part of it. Ignoring only the two subdirectories by
+# name left the parent exposed as untracked, one `git add -A` away from committing 105MB.
+research/
