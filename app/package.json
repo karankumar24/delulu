@@ -1,0 +1,27 @@
+{
+  "name": "delulu",
+  "version": "0.0.0",
+  "private": true,
+  "description": "delulu — session continuity for Claude Code: /delulu:handoff captures a session, /delulu:resume restores it in a fresh one.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node hook/build.mjs",
+    "sync": "node hook/sync-cache.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "tidy": "knip --no-progress; jscpd src --min-lines 8 --ignore \"**/node_modules/**,**/dist/**,**/*.test.ts\"; tsc --noEmit",
+    "dev": "node hook/build.mjs && node hook/sync-cache.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "esbuild": "^0.25.0",
+    "jscpd": "^5.0.8",
+    "knip": "^6.16.1",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.7"
+  }
+}

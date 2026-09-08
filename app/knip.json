@@ -1,0 +1,12 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/engine/index.ts",
+    "src/cli/handoff.ts",
+    "src/cli/resume.ts",
+    "src/**/*.test.ts",
+    "../plugin/hook/cli.mjs"
+  ],
+  "project": ["src/**/*.ts"],
+  "ignoreExportsUsedInFile": true
+}

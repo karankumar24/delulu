@@ -1,0 +1,17 @@
+{
+  "name": "delulu",
+  "description": "Carry a Claude Code session into a fresh one without replaying it. /delulu:handoff captures the thread, your decisions in your own words, what broke, and engine-verified repo state. /delulu:resume loads that instead of the transcript, so you re-explain nothing and spend a fraction of the context.",
+  "author": {
+    "name": "Karan Kumar"
+  },
+  "homepage": "https://github.com/karankumar24/delulu",
+  "keywords": [
+    "handoff",
+    "resume",
+    "session-continuity",
+    "context",
+    "agent"
+  ],
+  "license": "MIT",
+  "repository": "https://github.com/karankumar24/delulu"
+}

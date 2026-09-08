@@ -1,0 +1,11 @@
+#!/bin/sh
+# Makes `delulu` a real command for anyone with the plugin enabled.
+#
+# Claude Code adds an enabled plugin's bin/ to the Bash tool's PATH, so every message
+# this tool prints — "run `delulu resume <name>`" and the eighteen others — is true for
+# a stranger, not just on a machine where a shell alias happens to exist.
+#
+# Resolves its own location rather than the caller's cwd: the plugin lives in a versioned
+# cache directory whose path nobody can hardcode. Symlink-safe via `cd -P`.
+root=$(cd -P "$(dirname "$0")/.." && pwd) || exit 1
+exec node "$root/hook/cli.mjs" "$@"

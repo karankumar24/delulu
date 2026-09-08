@@ -1,0 +1,33 @@
+# The guard this exists for is `app/src/cli/shipped.test.ts`: `plugin/hook/*.mjs` are GENERATED
+# from `app/src/`, and committed. A source fix that is not rebuilt ships to nobody while every
+# test passes locally — which is what happened once, for two commits. That check only ran when
+# someone remembered to type `npx vitest`. Now it runs on every push.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Naming one permission sets every other to `none`. The default token for a new personal repo is
+# already read-only, so this changes nothing today — it states the requirement where a reader and a
+# future edit will both see it.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+        working-directory: app
+      - run: npx tsc -p tsconfig.json --noEmit
+        working-directory: app
+      - run: npx vitest run
+        working-directory: app
