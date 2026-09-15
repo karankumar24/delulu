@@ -44,9 +44,11 @@ describe('load: which handoff', () => {
     expect(r.stdout).toContain('no handoffs yet for this project');
   });
 
-  it('loads the handoff created last, whatever its name says, with the time and how to carry on', () => {
+  it('loads the handoff created last, whatever its name says, with the time and how to carry on', async () => {
     const { repo, base, config } = repoWith();
     handoff(base, '2026-09-15T10-00-00', '# p handoff\nFIRST\n');
+    // Far enough apart that the two folders cannot share a creation time, which is what orders them.
+    await new Promise((done) => { setTimeout(done, 20); });
     handoff(base, '2026-09-14T09-00-00', '# p handoff\nSECOND\n');
     const r = run(repo, config);
     expect(r.stdout).toContain('SECOND');

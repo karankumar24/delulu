@@ -1,5 +1,5 @@
-# Typecheck and tests on every push, including shipped.test.ts, which fails when the committed bundles
-# in plugin/hook are stale.
+# Typecheck, tests and knip on every push and pull request. shipped.test.ts fails here when the
+# committed bundles in plugin/hook are stale, and knip fails when something is left unused.
 name: ci
 
 on:
@@ -10,14 +10,24 @@ on:
 permissions:
   contents: read
 
+# A new push to the same branch cancels the run still going for the old one.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', '24']
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: '22'
+          node-version: ${{ matrix.node }}
           cache: npm
           cache-dependency-path: app/package-lock.json
       - run: npm ci
@@ -25,4 +35,6 @@ jobs:
       - run: npx tsc -p tsconfig.json --noEmit
         working-directory: app
       - run: npx vitest run
+        working-directory: app
+      - run: npx knip --production --no-progress
         working-directory: app
