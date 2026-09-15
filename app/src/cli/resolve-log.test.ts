@@ -1,10 +1,4 @@
-// delulu — transcript resolution unit tests.
-//
-// Regression cover for the audit's second root cause: Claude Code slugifies a repo path
-// by replacing EVERY non-alphanumeric character with '-', not just slashes. The old
-// slashes-only rule missed every repo path containing a space or a dot, `resolveLog`
-// returned null, and `handoff` then declined silently while the agent hand-wrote the
-// payload under delulu's letterhead.
+// Finding the session's transcript: the slug rules, the session id, and a relocated config folder.
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync, symlinkSync } from 'node:fs';
@@ -35,10 +29,8 @@ describe('projectSlugs', () => {
   });
 });
 
-// Picking the wrong transcript is the one failure that fabricates the user's voice: it prints
-// ANOTHER conversation's messages under "everything you said this session, verbatim". Reproduced on
-// the author's machine — running from `<repo>/app` resolved a directory of 8 unrelated transcripts.
-describe('resolveLog — identity beats guessing', () => {
+// Picking the wrong transcript would print another conversation's messages as this one's.
+describe('resolveLog: the session id before any guess', () => {
   let home: string;
   const projects = () => join(home, '.claude', 'projects');
   const write = (slug: string, name: string, body = '{}') => {
@@ -47,8 +39,7 @@ describe('resolveLog — identity beats guessing', () => {
     return join(projects(), slug, name);
   };
 
-  // os.homedir() honours $HOME on POSIX, so pointing it at a temp dir exercises the REAL code
-  // path — no module mocking, and the test still fails if resolveLog stops consulting homedir().
+  // os.homedir() honours $HOME on POSIX, so the real lookup runs against a temp folder.
   let realHome: string | undefined;
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), 'delulu-home-'));
@@ -76,19 +67,19 @@ describe('resolveLog — identity beats guessing', () => {
     expect(resolveLog('/Users/someone/original-project/.claude/worktrees/wt')).toBe(mine);
   });
 
-  it('falls back to the old behaviour when no session id is exported', () => {
+  it('falls back to the newest transcript when no session id is exported', () => {
     const only = write('-repo', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa.jsonl');
     expect(resolveLog('/repo', '/repo')).toBe(only);
   });
 
   it('one unreadable file does not surrender the whole directory to another project', () => {
     const good = write('-repo-app', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb.jsonl');
-    write('-repo', 'cccccccc-cccc-cccc-cccc-cccccccccccc.jsonl'); // the WRONG project
+    write('-repo', 'cccccccc-cccc-cccc-cccc-cccccccccccc.jsonl'); // another project
     symlinkSync(join(projects(), '-repo-app', 'nope.jsonl'), join(projects(), '-repo-app', 'dangling.jsonl'));
     expect(resolveLog('/repo', '/repo/app')).toBe(good);
   });
 
-  it('a long path still resolves — the slug is truncated and hashed like the harness does', () => {
+  it('resolves a long path, whose slug is truncated and hashed', () => {
     const deep = '/Users/someone/' + 'very-long-segment/'.repeat(14) + 'pkg';
     const slug = projectSlugs(deep)[0];
     expect(slug.length).toBeLessThanOrEqual(232);
@@ -97,16 +88,7 @@ describe('resolveLog — identity beats guessing', () => {
   });
 });
 
-/**
- * POSITIVE CATCH — every one of these was RED before delulu honoured CLAUDE_CONFIG_DIR.
- *
- * Claude Code relocates its whole state directory when that variable is set, transcripts included.
- * Measured, not assumed: one `claude -p` run with it set wrote the transcript to
- * `$CLAUDE_CONFIG_DIR/projects/<slug>/<sessionId>.jsonl` and left `~/.claude/projects` untouched.
- * delulu searched only the home path, so it resolved nothing and wrote nothing — every run, for as
- * long as the variable was set. Loud rather than silent, but the tool simply did not work.
- */
-describe('CLAUDE_CONFIG_DIR — Claude Code relocates its whole state directory', () => {
+describe('CLAUDE_CONFIG_DIR: Claude Code relocates its whole state folder', () => {
   const saved = process.env.CLAUDE_CONFIG_DIR;
   const dirs: string[] = [];
   afterEach(() => {
@@ -129,7 +111,7 @@ describe('CLAUDE_CONFIG_DIR — Claude Code relocates its whole state directory'
     }
   });
 
-  it('finds a transcript that exists ONLY under the relocated config — the bug: handoff wrote nothing', () => {
+  it('finds a transcript that exists only under the relocated config', () => {
     const cfg = mkdtempSync(join(tmpdir(), 'delulu-cfg-'));
     const repo = mkdtempSync(join(tmpdir(), 'delulu-repo-'));
     dirs.push(cfg, repo);
@@ -141,7 +123,7 @@ describe('CLAUDE_CONFIG_DIR — Claude Code relocates its whole state directory'
     expect(resolveLog(repo)).toBe(log);
   });
 
-  it('finds it by session id too, which is the path that beats guessing', () => {
+  it('finds it by session id too', () => {
     const cfg = mkdtempSync(join(tmpdir(), 'delulu-cfg-'));
     const repo = mkdtempSync(join(tmpdir(), 'delulu-repo-'));
     dirs.push(cfg, repo);

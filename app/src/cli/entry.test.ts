@@ -1,9 +1,7 @@
-// The 2026-08-15 incident, bound. A test one-liner imported `hook/handoff.mjs` to reach a symbol
-// and the import performed a full capture against the real repo, writing a handoff folder for a
-// session nobody ever had — which a later payload then described as an interview "never finished".
+// Importing a bundled command must never run it; running it must.
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
@@ -14,7 +12,7 @@ const OUT = mkdtempSync(join(tmpdir(), 'delulu-entry-'));
 const HANDOFF = join(OUT, 'handoff.mjs');
 const RESUME = join(OUT, 'resume.mjs');
 beforeAll(async () => {
-  for (const [src, outfile] of [['src/cli/handoff.ts', HANDOFF], ['src/cli/resume.ts', RESUME]] as const) {
+  for (const [src, outfile] of [['src/cli/save.ts', HANDOFF], ['src/cli/load.ts', RESUME]] as const) {
     await build({ bundle: true, platform: 'node', format: 'esm', target: 'node22', logLevel: 'silent',
       entryPoints: [resolve(APP, src)], outfile });
   }
@@ -25,15 +23,7 @@ const CLEAN_ENV = (() => { const e = { ...process.env }; delete e.CLAUDE_CODE_SE
 let repo: string | null = null;
 afterEach(() => { if (repo) { rmSync(repo, { recursive: true, force: true }); repo = null; } });
 
-/**
- * A git identity supplied by the TEST, never inherited from the machine.
- *
- * `git commit` with no identity fails `fatal: empty ident name ... not allowed`. On a developer's
- * laptop a global `user.email` hides that; on a fresh CI runner, or a new contributor's machine,
- * nothing does. This suite passed locally for months and failed on its very first CI run, on a
- * repository whose one visible quality signal is that CI badge. A test that reads the developer's
- * own configuration is testing the developer.
- */
+/** A git identity from the test, so commits work on a machine with none configured. */
 const GIT_ID = {
   ...process.env,
   GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t',
@@ -48,17 +38,16 @@ function gitRepo(): string {
   return d;
 }
 
-describe('entry — importing a command must never RUN it', () => {
+describe('entry: importing a command never runs it', () => {
   it('writes nothing when handoff.mjs is imported via node -e', () => {
     repo = gitRepo();
-    // Exactly the shape that caused it: `node -e` leaves process.argv[1] undefined, which is why
-    // "no entry path" has to mean NOT-the-program rather than degrade-open.
+    // `node -e` leaves process.argv[1] undefined.
     execFileSync('node', ['-e', `import(${JSON.stringify(pathToFileURL(HANDOFF).href)}).catch(() => {})`],
       { cwd: repo, env: CLEAN_ENV, encoding: 'utf8' });
     expect(existsSync(join(repo, '.delulu-handoff'))).toBe(false);
   });
 
-  it('writes nothing when resume.mjs is imported — importing it also MUTATES', () => {
+  it('prints and writes nothing when resume.mjs is imported', () => {
     repo = gitRepo();
     const out = execFileSync('node', ['-e', `import(${JSON.stringify(pathToFileURL(RESUME).href)}).catch(() => {})`],
       { cwd: repo, env: CLEAN_ENV, encoding: 'utf8' });
@@ -66,13 +55,11 @@ describe('entry — importing a command must never RUN it', () => {
     expect(existsSync(join(repo, '.delulu-handoff'))).toBe(false);
   });
 
-  it('STILL RUNS when invoked as a program — the guard must not silence the CLI', () => {
+  it('still runs when invoked as a program', () => {
     repo = gitRepo();
-    // The failure mode worse than the bug: a guard that decides "imported" for a real invocation
-    // makes delulu a silent no-op, which is what lets an agent conclude it worked.
-    execFileSync('node', [HANDOFF, '--repo', repo, '--log', resolve(APP, 'fixtures/iyw-session.jsonl')],
-      { env: CLEAN_ENV, encoding: 'utf8' });
-    const folders = readdirSync(join(repo, '.delulu-handoff')).filter((f) => f !== 'PENDING');
-    expect(folders).toHaveLength(1);
+    const log = join(OUT, 'session.jsonl');
+    writeFileSync(log, '{"type":"user","message":{"role":"user","content":"fix the footer"}}\n');
+    execFileSync('node', [HANDOFF, '--repo', repo, '--log', log], { env: CLEAN_ENV, encoding: 'utf8' });
+    expect(readdirSync(join(repo, '.delulu-handoff'))).toHaveLength(1);
   });
 });

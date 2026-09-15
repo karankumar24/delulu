@@ -1,6 +1,6 @@
 {
   "name": "delulu",
-  "description": "Session continuity for Claude Code, without reloading the session.",
+  "description": "Pick up a Claude Code session in a fresh one, as if you never left.",
   "owner": {
     "name": "Karan Kumar",
     "url": "https://github.com/karankumar24"
@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "delulu",
-      "description": "/delulu:handoff captures a session into a compact handoff. /delulu:resume loads it in a fresh window, so you carry on without re-explaining and without replaying the transcript into your context.",
+      "description": "Pick up a Claude Code session in a fresh one, as if you never left. /delulu:handoff saves what matters from this session, and /delulu:resume carries on from it in the next.",
       "source": "./plugin",
       "category": "productivity",
       "homepage": "https://github.com/karankumar24/delulu",

@@ -22,10 +22,9 @@ You need Node 22 or newer.
 cd app && npm ci && npm test
 ```
 
-The tests are the specification here. Almost every one is named after the
-behaviour it protects rather than the function it calls, and most exist because
-something went wrong once. If you change behaviour, the test that fails will
-usually tell you what you broke and why it mattered.
+The tests are the specification here. Each one is named after the behaviour it
+protects rather than the function it calls, so if you change behaviour, the test
+that fails usually tells you what you broke.
 
 ## The part that catches people out
 
@@ -35,21 +34,17 @@ source, then run `npm run build`, and commit the rebuilt bundles with your
 change. CI fails if they drift from the source, because a fix that is not
 rebuilt ships to nobody while every test still passes.
 
-The third file, `plugin/hook/cli.mjs`, is hand written and edited in place.
-
-`npm run dev` and `npm run sync` also mirror your working copy into the delulu
-installed at `~/.claude/plugins/cache/delulu/`, which is convenient when you
-want a fresh session to run what you just edited. Be aware that the mirror goes
-one way and it deletes: anything the install has that your working copy does not
-is removed from the install. Your clone is never touched. If you have delulu
-installed and you are working from a throwaway clone, use `npm run build`
-instead.
+`npm run dev` builds and then mirrors your working copy into the delulu installed
+at `~/.claude/plugins/cache/delulu/`, so a fresh session runs what you just
+edited. The mirror removes files from the install that your working copy no
+longer has. Your clone is never touched. If you are working from a throwaway
+clone, use `npm run build` instead.
 
 ## Style
 
-Match what is already there. Comments explain why something is the way it is,
-not what the line does, and several of them exist to stop a future change
-quietly undoing a fix.
+Match what is already there. Comments say why something is the way it is, in a
+line or two, never what the line does. The history of a change belongs in its
+commit message, not in a comment.
 
 Keep user facing text plain. No statistics, no internal measurements, no war
 stories from development. Someone reading the output should not have to know

@@ -1,14 +1,4 @@
-// WHAT DELULU IS, enforced rather than remembered.
-//
-// Two constraints the user has restated across sessions — "only two commands, handoff and resume"
-// and "always a manual command, no hook, nothing that fires on its own" — lived only as sentences
-// carried in a handoff's rules block. A sentence in a payload reaches exactly one place: a session
-// that happens to resume. It cannot stop a third command being added, and it never did anything at
-// all to a session that started cold.
-//
-// So they are checks now. The point is not that anyone was about to add a hook; it is that the
-// rules block was the wrong home for a constraint that a test can hold, and every line still
-// sitting there costs bytes in every resume while enforcing nothing.
+// delulu is two manual commands and nothing that fires on its own, checked rather than remembered.
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -18,24 +8,23 @@ const REPO = resolve(APP, '..');
 const PLUGIN = join(REPO, 'plugin');
 
 describe('delulu is two commands, and nothing else', () => {
-  it('the dispatcher routes handoff and resume, and refuses to grow a third quietly', () => {
-    const cli = readFileSync(join(PLUGIN, 'hook', 'cli.mjs'), 'utf8');
-    // Every command the dispatcher can actually reach, read off the routing itself rather than
-    // from a list somebody would have to remember to update.
-    const routed = [...cli.matchAll(/cmd === '([a-z-]+)'/g)].map((m) => m[1]).sort();
-    expect(routed, 'the dispatcher routes a command that is not handoff or resume').toEqual(['handoff', 'resume']);
+  const invoked = (text: string) => [...text.matchAll(/\bnode\s+"[^"]*\/hook\/([\w-]+\.mjs)"/g)].map((m) => m[1]);
+
+  it('each command file runs exactly its own script', () => {
+    const run = (f: string) => invoked(readFileSync(join(PLUGIN, 'commands', f), 'utf8'));
+    expect(run('handoff.md')).toEqual(['handoff.mjs']);
+    expect(run('resume.md')).toEqual(['resume.mjs']);
   });
 
-  it('ships exactly two slash commands', () => {
+  it('ships exactly two slash commands and their two scripts', () => {
     const commands = readdirSync(join(PLUGIN, 'commands')).filter((f) => f.endsWith('.md')).sort();
     expect(commands).toEqual(['handoff.md', 'resume.md']);
+    expect(readdirSync(join(PLUGIN, 'hook')).filter((f) => f.endsWith('.mjs')).sort()).toEqual(['handoff.mjs', 'resume.mjs']);
   });
 
-  it('the positive control — this test can fail', () => {
-    // Without this, a regex that stops matching makes both assertions above pass on an empty list,
-    // which is the failure this repo has shipped before: a check that could not go red.
-    const fake = "if (cmd === 'handoff') {} else if (cmd === 'compress') {}";
-    expect([...fake.matchAll(/cmd === '([a-z-]+)'/g)].map((m) => m[1])).toEqual(['handoff', 'compress']);
+  it('the positive control: this test can fail', () => {
+    // Without this, a regex that stops matching would pass on an empty list.
+    expect(invoked('node "${CLAUDE_PLUGIN_ROOT}/hook/compress.mjs" x')).toEqual(['compress.mjs']);
   });
 });
 
@@ -46,8 +35,7 @@ describe('delulu never fires on its own', () => {
   });
 
   it('ships no hooks directory and no settings that could install one', () => {
-    // A `hooks/` folder or a hooks block in settings is how a plugin arranges to run without being
-    // asked. Neither may exist: delulu runs when a person types the command, and at no other time.
+    // A hooks folder or settings file is how a plugin runs without being asked.
     expect(existsSync(join(PLUGIN, 'hooks')), 'plugin/hooks/ exists').toBe(false);
     for (const f of ['settings.json', 'hooks.json']) {
       expect(existsSync(join(PLUGIN, f)), `plugin/${f} exists`).toBe(false);
@@ -55,9 +43,7 @@ describe('delulu never fires on its own', () => {
   });
 
   it('the command files invoke delulu directly, never via an event', () => {
-    // `allowed-tools` is what the slash command may run. A command that could register a hook, or
-    // that reaches for anything beyond running node and reading files, is a command that could
-    // arrange to fire later.
+    // Front matter that mentions hooks could arrange for the command to fire later.
     for (const f of ['handoff.md', 'resume.md']) {
       const text = readFileSync(join(PLUGIN, 'commands', f), 'utf8');
       const front = text.slice(0, text.indexOf('---', 3));
