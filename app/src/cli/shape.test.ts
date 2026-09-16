@@ -1,5 +1,6 @@
 // delulu is two manual commands and nothing that fires on its own, checked rather than remembered.
 import { describe, it, expect } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
@@ -49,5 +50,26 @@ describe('delulu never fires on its own', () => {
       const front = text.slice(0, text.indexOf('---', 3));
       expect(front, `${f} front matter mentions hooks`).not.toMatch(/hook/i);
     }
+  });
+});
+
+describe('every file in the repo stays plain text', () => {
+  // A control character makes grep read the file as binary, so a search for a line inside it comes
+  // back empty and the line looks like it does not exist. Two NUL bytes did exactly that here.
+  const CONTROL = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/;
+  const tracked = execFileSync('git', ['-C', REPO, 'ls-files'], { encoding: 'utf8' }).split('\n').filter(Boolean);
+
+  it('finds the tracked files at all', () => {
+    expect(tracked.length).toBeGreaterThan(20);
+  });
+
+  it('carries no control character, in any tracked file', () => {
+    const bad = tracked.filter((f) => CONTROL.test(readFileSync(join(REPO, f), 'utf8')));
+    expect(bad, `write them as \\x00 escapes instead of the character itself: ${bad.join(', ')}`).toEqual([]);
+  });
+
+  it('the positive control: this test can fail', () => {
+    expect(CONTROL.test('a\x00b')).toBe(true);
+    expect(CONTROL.test('tabs\tand newlines\nare fine')).toBe(false);
   });
 });
