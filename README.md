@@ -10,7 +10,7 @@ Here is [what a handoff looks like](docs/example-handoff.md).
 
 **`/delulu:handoff`** at the end of a session. The agent writes a short note: where things stand, what it found, the next step, and what not to do. delulu adds what it can read for itself from the transcript and the repo, and saves one file.
 
-**`/delulu:resume`** in a fresh session. It loads the newest handoff, says what changed in the repo since it was saved, and tells the agent how to carry on. Add a few words after the command to load an older handoff by its date, or to say what you want to do first.
+**`/delulu:resume`** in a fresh session. It loads the newest handoff, says what changed in the repo since it was saved, and tells the agent how to carry on. Add a few words after the command to load an older handoff by its date, or to say what you want to do first. `/delulu:resume --list` shows the handoffs you have.
 
 Neither command asks you anything. Nothing runs in the background, and nothing is registered to fire on its own: delulu does nothing until you type one of the two.
 

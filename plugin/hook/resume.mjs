@@ -141,6 +141,11 @@ function isProgram(moduleUrl) {
   }
 }
 
+// src/cli/limits.ts
+var ONE_READ_BYTES = 27e3;
+var RESUME_LINES_BYTES = 1500;
+var HANDOFF_BYTES = ONE_READ_BYTES - RESUME_LINES_BYTES;
+
 // src/cli/resolve-log.ts
 import { homedir } from "node:os";
 import { join as join3 } from "node:path";
@@ -167,7 +172,6 @@ function truncateSlug(slug, original) {
 }
 
 // src/cli/load.ts
-var PRINT_BYTES = 27e3;
 var STAMPED = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(?:-\d+)?$/;
 function handoffs(base) {
   let names;
@@ -304,11 +308,11 @@ function lastActive(file) {
   }
 }
 function fitted(text, file, used) {
-  if (used + Buffer.byteLength(text) <= PRINT_BYTES) return text;
+  if (used + Buffer.byteLength(text) <= ONE_READ_BYTES) return text;
   const lines = text.split("\n");
   let bytes = used + 200;
   let k = 0;
-  while (k < lines.length && bytes + Buffer.byteLength(lines[k]) + 1 <= PRINT_BYTES) bytes += Buffer.byteLength(lines[k++]) + 1;
+  while (k < lines.length && bytes + Buffer.byteLength(lines[k]) + 1 <= ONE_READ_BYTES) bytes += Buffer.byteLength(lines[k++]) + 1;
   return `${lines.slice(0, k).join("\n")}
 
 The handoff continues. Read the rest before replying: ${file}, from line ${k + 1}.`;

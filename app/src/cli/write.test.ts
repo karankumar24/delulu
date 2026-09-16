@@ -141,7 +141,7 @@ describe('renderHandoff: fitting one read', () => {
     const ex = base({ saves: [900], replies: [{ line: 800, text: words(4000) }],
       turns: [{ kind: 'said', line: 1, text: typed, how: 'typed' }, { kind: 'asked', line: 2, before: '', questions }],
       helpers: [{ kind: 'agent', line: 3, what: 'Audit', ended: 'finished', report: words(200) }] });
-    const out = renderHandoff(input({ ex, budgetTokens: 4000 }));
+    const out = renderHandoff(input({ ex, budgetBytes: 10_000 }));
     expect(out).toContain(typed);
     expect(out).not.toContain('Report starts');
     expect(out).toContain('(rest at L800)');

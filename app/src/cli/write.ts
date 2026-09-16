@@ -1,6 +1,7 @@
 // The handoff the next agent reads: plain names, the parts it needs before its first move first, and
 // depth left on disk behind line numbers and paths. Everything is redacted before it is shortened.
 import { fullDate, shortTime } from './dates';
+import { HANDOFF_BYTES } from './limits';
 import { clipText } from './redact';
 import type { Extraction, Helper, Question } from './extract';
 
@@ -15,8 +16,8 @@ export interface HandoffInput {
   rules: string[];
   repo: { branch?: string; commit?: string; uncommitted?: number; commits: { sha: string; subject: string }[] };
   redact: (t: string) => string;
-  /** Tokens the handoff should fit in: one read. It shrinks in a fixed order to get there. */
-  budgetTokens?: number;
+  /** Bytes the handoff should fit in. It shrinks in a fixed order to get there. Tests set it low. */
+  budgetBytes?: number;
 }
 
 const ENDING: Record<NonNullable<Extraction['ended']>['kind'], string> = {
@@ -27,11 +28,11 @@ const section = (name: string, body: string) => `## ${name}\n${body}`;
 
 /** Fits one read when it can, shrinking in a fixed order; the user's words are never shortened. */
 export function renderHandoff(i: HandoffInput): string {
-  const budget = i.budgetTokens ?? 25_000;
+  const budget = i.budgetBytes ?? HANDOFF_BYTES;
   let out = '';
   for (let level = 0; level <= 3; level++) {
     out = compose(i, level);
-    if (Buffer.byteLength(out) / 2.5 <= budget) break;
+    if (Buffer.byteLength(out) <= budget) break;
   }
   return out;
 }

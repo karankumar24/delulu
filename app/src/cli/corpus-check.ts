@@ -11,6 +11,8 @@ import { APP_NOTICES, extractSession } from './extract';
 import type { Extraction, Said } from './extract';
 import { obj, str, textOf } from './json';
 import type { Rec } from './json';
+import { HANDOFF_BYTES } from './limits';
+import { renderHandoff } from './write';
 
 const flat = (s: string) => s.replace(/\s+/g, ' ').trim();
 
@@ -26,6 +28,7 @@ const CHECKS = [
   'every save marked',
   'every user record placed',
   'every line readable',
+  'everything but your own words fits one read',
 ] as const;
 type Check = (typeof CHECKS)[number];
 const tally = new Map<Check, { passed: number; failed: string[] }>(CHECKS.map((c) => [c, { passed: 0, failed: [] }]));
@@ -54,6 +57,8 @@ const root = process.argv.slice(2).find((a) => !a.startsWith('--')) ?? join(home
 const totals = { sessions: 0, said: 0, asked: 0, questions: 0, notices: 0, continued: 0, maybeApp: 0, noLastPrompt: 0, ms: 0, slowest: 0 };
 const outcomes = new Map<string, number>();
 const neverSent: string[] = [];
+/** Sessions whose own messages push the handoff past one read, so resume prints part and points on. */
+const overOneRead: string[] = [];
 const endings = new Map<string, number>();
 
 for (const project of readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory())) {
@@ -303,6 +308,18 @@ for (const project of readdirSync(root, { withFileTypes: true }).filter((d) => d
     else pass('every user record placed');
     if (ex.unreadable.length) fail('every line readable', sid, `lines ${ex.unreadable.slice(0, 8).join(', ')}`);
     else pass('every line readable');
+
+    // 12. Everything delulu decides to carry fits one read, after shrinking. The user's own messages
+    // are never cut to fit, so they are measured apart: when they push a handoff past one read,
+    // resume prints as far as it can and names the file and line to read on, dropping the oldest
+    // messages first because they sit last. (The agent's summary is not here to add: this session is
+    // over, so what is measured is the floor, not the total.)
+    const page = renderHandoff({ project: 'p', savedAt: new Date(), transcript: file, folder: sid, ex, rules: [],
+      repo: { branch: 'main', commit: 'abc1234', uncommitted: 0, commits: [] }, redact: (t) => t });
+    const head = Buffer.byteLength(page.split("\n## The user's messages")[0]);
+    if (head > HANDOFF_BYTES) fail('everything but your own words fits one read', sid, `${head} bytes, ${head - HANDOFF_BYTES} over, after shrinking`);
+    else pass('everything but your own words fits one read');
+    if (Buffer.byteLength(page) > HANDOFF_BYTES) overOneRead.push(`${sid}  ${Buffer.byteLength(page)} bytes`);
   }
 }
 
@@ -317,6 +334,7 @@ out.push(`answers: ${[...outcomes].map(([k, v]) => `${v} ${k}`).join(', ')}`);
 out.push(`helpers: ${[...endings].sort().map(([k, v]) => `${v} ${k}`).join(', ')}`);
 out.push(`extraction took ${(totals.ms / 1000).toFixed(1)}s in all, slowest session ${(totals.slowest / 1000).toFixed(2)}s; ${totals.noLastPrompt} sessions have no last-prompt record to check`);
 out.push(`enqueued but never sent (edited or cancelled first), so not expected: ${neverSent.length}${neverSent.length ? `, e.g. ${neverSent.slice(0, 3).join('; ')}` : ''}`);
+out.push(`your own messages push the handoff past one read in ${overOneRead.length} session(s), where resume prints part and names the file${overOneRead.length ? `: ${overOneRead.slice(0, 3).join('; ')}` : ''}`);
 out.push('');
 let failed = 0;
 for (const [name, { passed, failed: f }] of tally) {

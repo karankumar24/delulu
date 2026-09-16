@@ -1105,6 +1105,11 @@ function shortTime(iso) {
   return d && !Number.isNaN(d.getTime()) ? `${MONTHS[d.getMonth()]} ${d.getDate()}, ${clock(d)}` : "";
 }
 
+// src/cli/limits.ts
+var ONE_READ_BYTES = 27e3;
+var RESUME_LINES_BYTES = 1500;
+var HANDOFF_BYTES = ONE_READ_BYTES - RESUME_LINES_BYTES;
+
 // src/cli/write.ts
 var ENDING = {
   limit: "on a usage limit",
@@ -1115,11 +1120,11 @@ var ENDING = {
 var section = (name, body) => `## ${name}
 ${body}`;
 function renderHandoff(i) {
-  const budget = i.budgetTokens ?? 25e3;
+  const budget = i.budgetBytes ?? HANDOFF_BYTES;
   let out = "";
   for (let level = 0; level <= 3; level++) {
     out = compose(i, level);
-    if (Buffer.byteLength(out) / 2.5 <= budget) break;
+    if (Buffer.byteLength(out) <= budget) break;
   }
   return out;
 }

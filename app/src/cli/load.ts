@@ -7,10 +7,9 @@ import { git, uncommitted } from '../transcript/git';
 import { repoKey } from '../transcript/repo-key';
 import { clockNow, handoffLabel, stampWhen } from './dates';
 import { isProgram } from './entry';
+import { ONE_READ_BYTES } from './limits';
 import { projectSlugs, projectsDir } from './resolve-log';
 
-/** About what one command output shows whole; past it the harness swaps the output for a short preview. */
-const PRINT_BYTES = 27_000;
 const STAMPED = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(?:-\d+)?$/;
 
 interface Handoff { folder: string; file: string; created: number }
@@ -130,11 +129,11 @@ function lastActive(file: string): number {
 
 /** The handoff whole when it fits one output; otherwise its start, cut at a line, and exactly where to read on. */
 function fitted(text: string, file: string, used: number): string {
-  if (used + Buffer.byteLength(text) <= PRINT_BYTES) return text;
+  if (used + Buffer.byteLength(text) <= ONE_READ_BYTES) return text;
   const lines = text.split('\n');
   let bytes = used + 200;
   let k = 0;
-  while (k < lines.length && bytes + Buffer.byteLength(lines[k]) + 1 <= PRINT_BYTES) bytes += Buffer.byteLength(lines[k++]) + 1;
+  while (k < lines.length && bytes + Buffer.byteLength(lines[k]) + 1 <= ONE_READ_BYTES) bytes += Buffer.byteLength(lines[k++]) + 1;
   return `${lines.slice(0, k).join('\n')}\n\nThe handoff continues. Read the rest before replying: ${file}, from line ${k + 1}.`;
 }
 
