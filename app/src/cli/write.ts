@@ -13,8 +13,6 @@ export interface HandoffInput {
   ex: Extraction;
   /** The agent's summary, written when saving. Nothing checks it. */
   note?: string;
-  /** The worktree the session ran in, when it was not the main checkout. */
-  worktree?: string;
   repo: { branch?: string; commit?: string; uncommitted?: number; commits: { sha: string; subject: string }[] };
   redact: (t: string) => string;
   /** Bytes the handoff should fit in. It shrinks in a fixed order to get there. Tests set it low. */
@@ -38,11 +36,10 @@ export function renderHandoff(i: HandoffInput): string {
   return out;
 }
 
-/** Level 1: older picks lose the agent's question. 2: report excerpts go. 3: a long last reply is cut. */
+/** Level 1: older picks keep their question only in short. 2: report excerpts go. 3: a long last reply is cut. */
 function compose(i: HandoffInput, level: number): string {
   const { ex, redact } = i;
   const top = [`# ${i.project} handoff · saved ${fullDate(i.savedAt)}`, `Transcript: ${i.transcript} (L123 means line 123 of it)`];
-  if (i.worktree) top.push(`Saved from the worktree ${i.worktree}.`);
   if (ex.copied) top.push(`This session continues ${ex.copied.from.slice(0, 8)}; its earlier messages are not repeated here.`);
   if (ex.ended) top.push(`The session ended ${ENDING[ex.ended.kind]} (L${ex.ended.line}): ${redact(ex.ended.text)}`);
   if (ex.unplaced.length) top.push(`delulu could not place ${ex.unplaced.length} records (${ex.unplaced.map((l) => `L${l}`).join(', ')}); a message may be missing near them.`);
@@ -173,12 +170,12 @@ function messageLines(ex: Extraction, redact: (t: string) => string, folder: str
       out.push(`${head}${sent}: ${indent(redact(body))}${t.maybeApp ? " (may be the app's retry button)" : ''}${shots}`);
     } else if (t.kind === 'asked') {
       for (const q of [...t.questions].reverse()) {
-        // Past the newest answers, a plain pick keeps only what was picked, not the agent's question.
+        // Past the newest answers, a plain pick keeps its question in short: a pick answers only its question.
         const a = q.answer;
         const pick = a.outcome === 'answered' && a.items.length === 1 && a.items[0].picked ? a.items[0].text : '';
         if (level >= 1 && shown++ >= RECENT_ANSWERS && pick) {
           const label = pick.replace(RECOMMENDED, '');
-          out.push(`${head} · ${label !== pick ? `took the agent's recommendation "${redact(label)}"` : `picked "${redact(label)}"`}`);
+          out.push(`${head} · asked "${clipText(q.question, 90, redact)}": ${label !== pick ? `took the agent's recommendation "${redact(label)}"` : `picked "${redact(label)}"`}`);
         } else out.push(`${head} · asked "${redact(q.question)}": ${indent(answerText(q, redact))}`);
       }
     } else if (t.kind === 'stopped') out.push(`${head} · ${t.appClosed ? 'the app closed while the agent was working' : 'stopped the agent'}`);

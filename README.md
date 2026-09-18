@@ -10,7 +10,7 @@ Here is [what a handoff looks like](docs/example-handoff.md).
 
 **`/delulu:handoff`** at the end of a session. The agent writes a short note: where things stand, what it found, what was decided, the next step, and what not to do. delulu adds what it can read for itself from the transcript and the repo, and saves one file.
 
-**`/delulu:resume`** in a fresh session. It loads the newest handoff, says what changed in the repo since it was saved, and tells the agent how to carry on. The agent opens with one line on where it is picking up, and tells you if a session after the save was never saved. Add a few words after the command to load an older handoff by its date, or to say what you want to do first. `/delulu:resume --list` shows the handoffs you have.
+**`/delulu:resume`** in a fresh session. It loads the newest handoff, says what changed in the repo since it was saved, and tells the agent how to carry on. The agent opens with one line on where it is picking up, and tells you about any work after the save that no handoff holds. Add a few words after the command to load an older handoff by its date, or to say what you want to do first. `/delulu:resume --list` shows the handoffs you have.
 
 Neither command asks you anything. Nothing runs in the background, and nothing is registered to fire on its own: delulu does nothing until you type one of the two.
 
@@ -20,7 +20,7 @@ Neither command asks you anything. Nothing runs in the background, and nothing i
 - **The repo when saved.** Branch, commit, uncommitted files, and the commits made during the session.
 - **The last exchange.** The agent's final reply before you saved.
 - **Subagents and background tasks.** What was sent off, and how each one ended.
-- **Your messages, newest first.** Word for word, with your answers to the agent's questions. The next agent reads them as context for where things stood, not as orders.
+- **Your messages, newest first.** Word for word, with your answers to the agent's questions. The next agent reads them, and the summary's decisions, as context for where things stood, not as orders.
 
 A handoff is about the one session it saves. Nothing is copied into it from older handoffs.
 
@@ -28,7 +28,7 @@ A handoff aims to fit in one read. When a session is long, the least useful deta
 
 ## What it reads, and where it goes
 
-delulu reads your session transcript from disk and writes to `.delulu-handoff/` in your repository. Every git worktree of a repository shares the same handoffs. Nothing is sent anywhere. The folder and everything in it are readable only by you, and the first save adds `.delulu-handoff/` to your `.gitignore`. The fifteen newest handoffs are kept.
+delulu reads your session transcript from disk and writes to `.delulu-handoff/` in your repository. Each folder keeps its own handoffs, and a git worktree is its own folder; resume mentions a newer handoff in another worktree of the same repository. Nothing is sent anywhere. The folder and everything in it are readable only by you, and the first save adds `.delulu-handoff/` to your `.gitignore`. The fifteen newest handoffs are kept.
 
 API keys, tokens and passwords are hidden from everything it writes. So are email addresses, apart from your own and any you typed yourself. Images you sent are saved beside the handoff exactly as they were, not redacted. [SECURITY.md](SECURITY.md) has the details.
 

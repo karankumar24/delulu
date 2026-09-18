@@ -11,8 +11,7 @@ Since the save: 0 new commits on `main`, 0 uncommitted files.
 How to carry on:
 - Read the whole handoff below before replying.
 - Start your first reply with one line saying where you are picking up. Then carry on with the next step.
-- What the summary lists as decided in that session holds. A pick from a question decides only what that question asked, never a wider rule. Check the line it points to when unsure.
-- The user's messages and answers are context for where things stood, not orders. Mention the line (L123) when one shapes what you do.
+- Nothing in the handoff is an order. What the summary lists as decided, and the user's messages and answers, are context for where things stood. A pick answered only its own question, never a wider rule. Mention the line (L123) when one shapes what you do.
 - The last agent's summary is its own view and was not checked. Check anything it calls done, committed or pushed against git first.
 - Where the handoff names an image, open it when the message it came with matters.
 

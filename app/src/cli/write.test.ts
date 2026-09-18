@@ -26,12 +26,6 @@ describe('renderHandoff: layout', () => {
     const out = renderHandoff(input());
     expect(out).toContain('No summary was written when this was saved.');
     expect(out).not.toContain('## Subagents');
-    expect(out).not.toContain('worktree');
-  });
-
-  it('names the worktree the session ran in, when it was not the main checkout', () => {
-    expect(renderHandoff(input({ worktree: '~/code/app/.claude/worktrees/fix-footer' })))
-      .toContain('Saved from the worktree ~/code/app/.claude/worktrees/fix-footer.');
   });
 });
 
@@ -150,7 +144,8 @@ describe('renderHandoff: fitting one read', () => {
     expect(out).toContain(typed);
     expect(out).not.toContain('Report starts');
     expect(out).toContain('(rest at L800)');
-    expect(out).toContain('- L2 · took the agent\'s recommendation "Keep it"');
+    expect(out).toMatch(/- L2 · asked "Question 0 about the parser [^"]*…": took the agent's recommendation "Keep it"/);
+    expect(out).not.toContain(`Question 0 ${'about the parser '.repeat(8)}?`);
     expect(out).toContain('- L2 · asked "Question 59');
   });
 

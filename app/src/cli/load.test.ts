@@ -4,7 +4,7 @@ import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { homedir, tmpdir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { build } from 'esbuild';
 import { projectSlugs } from './resolve-log';
 
@@ -41,7 +41,7 @@ describe('load: which handoff', () => {
     const { repo, config } = repoWith();
     const r = run(repo, config);
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain('no handoffs yet for this project');
+    expect(r.stdout).toContain('no handoffs yet in this folder');
   });
 
   it('loads the handoff created last, whatever its name says, with the time and how to carry on', async () => {
@@ -56,7 +56,7 @@ describe('load: which handoff', () => {
     expect(r.stdout).toMatch(/^delulu resume: Sep 14 handoff, saved Sep 14 at 9:00 AM/);
     expect(r.stdout).toContain('How to carry on:');
     expect(r.stdout).toContain('Start your first reply with one line saying where you are picking up. Then carry on with the next step.');
-    expect(r.stdout).toContain('are context for where things stood, not orders');
+    expect(r.stdout).toContain('Nothing in the handoff is an order.');
     expect(r.stdout).not.toContain('never saved');
     expect(r.stdout).not.toContain('AskUserQuestion');
   });
@@ -75,21 +75,57 @@ describe('load: which handoff', () => {
   });
 });
 
-describe('load: worktrees share one set of handoffs', () => {
-  it('finds a handoff saved in the main checkout from a worktree, and says where each is', () => {
+describe('load: each folder keeps its own handoffs', () => {
+  it('names a newer handoff saved in another worktree of the repo, and does not load it', async () => {
     const { repo, base, config } = repoWith();
+    handoff(base, '2026-09-15T10-00-00', '# p handoff\nMAIN\n');
+    await new Promise((done) => { setTimeout(done, 20); });
     const tree = join(temp('delulu-load-wt-'), 'wt');
     git(repo, 'worktree', 'add', '-q', '-b', 'side', tree);
-    handoff(base, '2026-09-15T10-00-00', '# p handoff\nMAIN\n');
-    const r = run(tree, config);
+    handoff(join(tree, '.delulu-handoff'), '2026-09-16T10-00-00', '# p handoff\nSIDE\n');
+    const r = run(repo, config);
     expect(r.stdout).toContain('MAIN');
-    expect(r.stdout).toContain(`this session is in ${realpathSync(tree).replace(homedir(), '~')}`);
+    expect(r.stdout).not.toContain('SIDE');
+    expect(r.stdout).toContain('A newer handoff was saved in another worktree of this repo');
+    expect(r.stdout).toContain('2026-09-16T10-00-00/handoff.md');
   });
 
-  it('says nothing about folders when the handoff was saved where the session is', () => {
+  it('says where a handoff is when this folder has none but another worktree does', () => {
+    const { repo, config } = repoWith();
+    const tree = join(temp('delulu-load-wt-'), 'wt');
+    git(repo, 'worktree', 'add', '-q', '-b', 'side', tree);
+    handoff(join(tree, '.delulu-handoff'), '2026-09-16T10-00-00', '# p handoff\nSIDE\n');
+    const r = run(repo, config);
+    expect(r.stdout).toContain('no handoffs yet in this folder');
+    expect(r.stdout).toContain('A newer handoff was saved in another worktree of this repo');
+  });
+
+  it('says nothing about other worktrees when none has a newer handoff', () => {
     const { repo, base, config } = repoWith();
     handoff(base, '2026-09-15T10-00-00', '# p handoff\nMAIN\n');
-    expect(run(repo, config).stdout).not.toContain('It was saved in');
+    expect(run(repo, config).stdout).not.toContain('another worktree');
+  });
+});
+
+describe('load: the saved session kept going', () => {
+  it('says when the user kept typing in the saved session after it was saved', () => {
+    const { repo, base, config } = repoWith();
+    const log = join(temp('delulu-load-log-'), 'aaaaaaaa-1.jsonl');
+    const at = (ms: number) => new Date(Date.now() + ms).toISOString();
+    const said = (text: string, ms: number) => JSON.stringify({ type: 'user', uuid: `u-${ms}`, timestamp: at(ms), origin: { kind: 'human' }, message: { role: 'user', content: text } });
+    writeFileSync(log, `${[said('fix the footer', -600_000), said('did you push it?', 600_000)].join('\n')}\n`);
+    handoff(base, '2026-09-15T10-00-00', `# p handoff\nTranscript: ${log} (L123 means line 123 of it)\n`);
+    const r = run(repo, config);
+    expect(r.stdout).toContain('the saved session kept going after it was saved: 1 more message from the user, from L2');
+    expect(r.stdout).toContain('tell the user about the unsaved work named above');
+  });
+
+  it('says nothing when the saved session stopped at the save', () => {
+    const { repo, base, config } = repoWith();
+    const log = join(temp('delulu-load-log-'), 'aaaaaaaa-1.jsonl');
+    writeFileSync(log, `${JSON.stringify({ type: 'user', uuid: 'u', timestamp: new Date(Date.now() - 600_000).toISOString(), origin: { kind: 'human' }, message: { role: 'user', content: 'go' } })}\n`);
+    handoff(base, '2026-09-15T10-00-00', `# p handoff\nTranscript: ${log} (L123 means line 123 of it)\n`);
+    expect(run(repo, config).stdout).not.toContain('kept going');
   });
 });
 
@@ -129,7 +165,7 @@ describe('load: what changed since', () => {
     expect(r.stdout).toContain('1 session in this project was active after this was saved and was never saved');
     expect(r.stdout).toContain('bbbbbbbb');
     expect(r.stdout).not.toMatch(/aaaaaaaa \(/);
-    expect(r.stdout).toContain('tell the user that a session active after the save was never saved');
+    expect(r.stdout).toContain('tell the user about the unsaved work named above');
   });
 
   it('counts a session in another worktree of the repo as unsaved work too', () => {

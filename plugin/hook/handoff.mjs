@@ -1,5 +1,5 @@
 // src/cli/save.ts
-import { existsSync as existsSync3, mkdirSync, readdirSync as readdirSync3, readFileSync as readFileSync4, rmSync, statSync as statSync3, writeFileSync } from "node:fs";
+import { chmodSync, existsSync as existsSync3, mkdirSync, readdirSync as readdirSync3, readFileSync as readFileSync4, rmSync, statSync as statSync3, writeFileSync } from "node:fs";
 import { basename as basename3, dirname as dirname2, join as join5 } from "node:path";
 import { homedir as homedir3 } from "node:os";
 
@@ -81,15 +81,6 @@ function repoKey(dir) {
   }
   const here = realpathSync(dir);
   return discoverRoot(here) ?? here;
-}
-function handoffHome(repo) {
-  const common = git(repo, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
-  if (!common || basename(common) !== ".git") return repo;
-  try {
-    return realpathSync(dirname(common));
-  } catch {
-    return repo;
-  }
 }
 function discoverRoot(from) {
   let dir = from;
@@ -1088,7 +1079,6 @@ function renderHandoff(i) {
 function compose(i, level) {
   const { ex, redact } = i;
   const top = [`# ${i.project} handoff \xB7 saved ${fullDate(i.savedAt)}`, `Transcript: ${i.transcript} (L123 means line 123 of it)`];
-  if (i.worktree) top.push(`Saved from the worktree ${i.worktree}.`);
   if (ex.copied) top.push(`This session continues ${ex.copied.from.slice(0, 8)}; its earlier messages are not repeated here.`);
   if (ex.ended) top.push(`The session ended ${ENDING[ex.ended.kind]} (L${ex.ended.line}): ${redact(ex.ended.text)}`);
   if (ex.unplaced.length) top.push(`delulu could not place ${ex.unplaced.length} records (${ex.unplaced.map((l) => `L${l}`).join(", ")}); a message may be missing near them.`);
@@ -1215,7 +1205,7 @@ function messageLines(ex, redact, folder, level) {
         const pick = a.outcome === "answered" && a.items.length === 1 && a.items[0].picked ? a.items[0].text : "";
         if (level >= 1 && shown++ >= RECENT_ANSWERS && pick) {
           const label = pick.replace(RECOMMENDED, "");
-          out.push(`${head} \xB7 ${label !== pick ? `took the agent's recommendation "${redact(label)}"` : `picked "${redact(label)}"`}`);
+          out.push(`${head} \xB7 asked "${clipText(q.question, 90, redact)}": ${label !== pick ? `took the agent's recommendation "${redact(label)}"` : `picked "${redact(label)}"`}`);
         } else out.push(`${head} \xB7 asked "${redact(q.question)}": ${indent(answerText(q, redact))}`);
       }
     } else if (t.kind === "stopped") out.push(`${head} \xB7 ${t.appClosed ? "the app closed while the agent was working" : "stopped the agent"}`);
@@ -1276,13 +1266,17 @@ function main() {
   }
   const ex = extractSession(log, { siblings });
   if (!ex.turns.some((t) => t.kind === "said" || t.kind === "asked")) return fail("this session has no messages from the user yet, so there is nothing to hand off. Nothing was saved.");
-  const home = handoffHome(repo);
-  const base = join5(home, ".delulu-handoff");
-  const notePaths = [.../* @__PURE__ */ new Set([join5(repo, ".delulu-handoff", "note.md"), join5(base, "note.md")])];
+  const base = join5(repo, ".delulu-handoff");
+  const sid = process.env.CLAUDE_CODE_SESSION_ID;
+  const candidates = [...sid && /^[A-Za-z0-9-]{8,}$/.test(sid) ? [join5(base, `note-${sid}.md`)] : [], join5(base, "note.md")];
   let note = "";
-  for (const p of notePaths) {
+  let notePath = candidates[0];
+  for (const p of candidates) {
     try {
-      if (!note && statSync3(p).mtimeMs >= (ex.startedAt ? Date.parse(ex.startedAt) : 0)) note = readFileSync4(p, "utf8").trim();
+      if (statSync3(p).mtimeMs < (ex.startedAt ? Date.parse(ex.startedAt) : 0)) continue;
+      note = readFileSync4(p, "utf8").trim();
+      notePath = p;
+      break;
     } catch {
     }
   }
@@ -1297,6 +1291,7 @@ function main() {
     return { sha, subject: rest.join("	") };
   });
   mkdirSync(base, { recursive: true, mode: 448 });
+  chmodSync(base, 448);
   const now = /* @__PURE__ */ new Date();
   let folder = stamp(now);
   for (let n = 2; ; n++) {
@@ -1309,25 +1304,24 @@ function main() {
     }
   }
   const out = renderHandoff({
-    project: basename3(home),
+    project: basename3(repo),
     savedAt: now,
     transcript: log.replace(homedir3(), "~"),
     folder,
     ex,
     note: note || void 0,
     redact,
-    worktree: repo === home ? void 0 : repo.replace(homedir3(), "~"),
     repo: { branch, commit, uncommitted: dirty, commits }
   });
   writeFileSync(join5(base, folder, "handoff.md"), out, { mode: 384 });
   const missed = writeImages(join5(base, folder), ex);
-  for (const p of notePaths) rmSync(p, { force: true });
-  const lines = [`delulu saved this session: ${repo === home ? "" : `${home.replace(homedir3(), "~")}/`}.delulu-handoff/${folder}/handoff.md (about ${(Buffer.byteLength(out) / 2500).toFixed(1)}k tokens)`];
-  if (!note) lines.push("No summary was written, so the next session gets the session without one. Write .delulu-handoff/note.md and save again to add it.");
-  const ignored = keepOutOfGit(home);
+  if (note) rmSync(notePath, { force: true });
+  const lines = [`delulu saved this session: .delulu-handoff/${folder}/handoff.md (about ${(Buffer.byteLength(out) / 2500).toFixed(1)}k tokens)`];
+  if (!note) lines.push(`No summary was written, so the next session gets the session without one, and no older handoff was removed. Write ${notePath.replace(`${repo}/`, "")} and save again to add it.`);
+  const ignored = keepOutOfGit(repo);
   if (ignored) lines.push(ignored);
   if (missed) lines.push(`${missed} image(s) could not be saved.`);
-  const pruned = prune(base, folder);
+  const pruned = note ? prune(base, folder) : "";
   if (pruned) lines.push(pruned);
   lines.push("In a fresh session, type /delulu:resume to carry on.");
   process.stdout.write(`${lines.join("\n")}

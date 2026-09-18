@@ -24,13 +24,6 @@ export function repoKey(dir: string): string {
   return discoverRoot(here) ?? here;
 }
 
-/** Where a repo's handoffs live: its main checkout, so every git worktree of it shares one set. */
-export function handoffHome(repo: string): string {
-  const common = git(repo, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
-  if (!common || basename(common) !== '.git') return repo;
-  try { return realpathSync(dirname(common)); } catch { return repo; }
-}
-
 /** Every checkout of the repo, this one first: the folders its sessions can run in. */
 export function checkouts(repo: string): string[] {
   const listed = (git(repo, ['worktree', 'list', '--porcelain']) ?? '').split('\n')

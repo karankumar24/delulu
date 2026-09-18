@@ -1,9 +1,9 @@
 // The capture /delulu:handoff runs: the agent's note is already written, one command, one handoff out.
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { homedir, tmpdir } from 'node:os';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { build } from 'esbuild';
 
 const BUNDLES = mkdtempSync(join(tmpdir(), 'delulu-save-bundle-'));
@@ -67,21 +67,40 @@ describe('save', () => {
     expect(r.stdout).not.toMatch(/rule/i);
   });
 
-  it('saves a worktree session beside the main checkout, where every worktree of the repo finds it', () => {
+  it("reads only this session's own note, so a second window saving in the same folder keeps its summary", () => {
     const { repo, log, base } = setup([user('fix the footer')]);
-    const tree = join(mkdtempSync(join(tmpdir(), 'delulu-save-wt-')), 'wt');
-    made.push(dirname(tree));
-    execFileSync('git', ['-C', repo, 'worktree', 'add', '-q', '-b', 'footer', tree]);
-    mkdirSync(join(tree, '.delulu-handoff'));
-    writeFileSync(join(tree, '.delulu-handoff', 'note.md'), 'Worktree note.\n');
-    const r = run(tree, log);
+    mkdirSync(base);
+    writeFileSync(join(base, 'note-aaaaaaaa-1.md'), 'Mine.\n');
+    writeFileSync(join(base, 'note-bbbbbbbb-2.md'), 'The other window.\n');
+    const r = spawnSync('node', [SAVE, '--repo', repo, '--log', log], { encoding: 'utf8', env: { ...env, CLAUDE_CODE_SESSION_ID: 'aaaaaaaa-1' } });
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain(`${realpathSync(repo).replace(homedir(), '~')}/.delulu-handoff/`);
     const out = readFileSync(join(base, folders(base)[0], 'handoff.md'), 'utf8');
-    expect(out).toContain('Worktree note.');
-    expect(out).toContain(`Saved from the worktree ${realpathSync(tree).replace(homedir(), '~')}.`);
-    expect(out).toContain('Branch `footer`');
-    expect(existsSync(join(tree, '.delulu-handoff', 'note.md'))).toBe(false);
+    expect(out).toContain('Mine.');
+    expect(out).not.toContain('The other window.');
+    expect(existsSync(join(base, 'note-aaaaaaaa-1.md'))).toBe(false);
+    expect(readFileSync(join(base, 'note-bbbbbbbb-2.md'), 'utf8')).toBe('The other window.\n');
+  });
+
+  it("falls back to a plain note.md when this session's own note is missing", () => {
+    const { repo, log, base } = setup([user('go')]);
+    mkdirSync(base);
+    writeFileSync(join(base, 'note.md'), 'Plain.\n');
+    spawnSync('node', [SAVE, '--repo', repo, '--log', log], { encoding: 'utf8', env: { ...env, CLAUDE_CODE_SESSION_ID: 'aaaaaaaa-1' } });
+    expect(readFileSync(join(base, folders(base)[0], 'handoff.md'), 'utf8')).toContain('Plain.');
+  });
+
+  it('never removes an older handoff to make room for one saved without a summary', () => {
+    const { repo, log, base } = setup([user('go')]);
+    for (let k = 10; k < 25; k++) {
+      mkdirSync(join(base, `2026-09-${k}T10-00-00`), { recursive: true });
+      writeFileSync(join(base, `2026-09-${k}T10-00-00`, 'handoff.md'), '# x\n');
+    }
+    const r = run(repo, log);
+    expect(folders(base)).toHaveLength(16);
+    expect(r.stdout).toContain('no older handoff was removed');
+    writeFileSync(join(base, 'note.md'), 'Summary.\n');
+    run(repo, log);
+    expect(folders(base)).toHaveLength(15);
   });
 
   it('refuses a session with no messages from the user, and writes nothing', () => {
