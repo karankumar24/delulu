@@ -1,6 +1,6 @@
 // src/cli/save.ts
-import { existsSync as existsSync3, mkdirSync, readdirSync as readdirSync3, readFileSync as readFileSync5, rmSync, statSync as statSync3, writeFileSync } from "node:fs";
-import { basename as basename3, dirname as dirname2, join as join6 } from "node:path";
+import { existsSync as existsSync3, mkdirSync, readdirSync as readdirSync3, readFileSync as readFileSync4, rmSync, statSync as statSync3, writeFileSync } from "node:fs";
+import { basename as basename3, dirname as dirname2, join as join5 } from "node:path";
 import { homedir as homedir3 } from "node:os";
 
 // src/transcript/git.ts
@@ -81,6 +81,15 @@ function repoKey(dir) {
   }
   const here = realpathSync(dir);
   return discoverRoot(here) ?? here;
+}
+function handoffHome(repo) {
+  const common = git(repo, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  if (!common || basename(common) !== ".git") return repo;
+  try {
+    return realpathSync(dirname(common));
+  } catch {
+    return repo;
+  }
 }
 function discoverRoot(from) {
   let dir = from;
@@ -1043,58 +1052,6 @@ function resolveBySessionId() {
   return null;
 }
 
-// src/cli/rules.ts
-import { readFileSync as readFileSync4 } from "node:fs";
-import { join as join5 } from "node:path";
-var HEADS = { "standing rules": "rules", "dropped rules": "dropped" };
-function parseNote(text) {
-  const summary = [];
-  const lists = { rules: [], dropped: [] };
-  let into;
-  let rulesGiven = false;
-  for (const line of text.split("\n")) {
-    const head = HEADS[line.match(/^##\s+(.+?)\s*$/)?.[1]?.toLowerCase() ?? ""];
-    if (head) {
-      into = head;
-      rulesGiven ||= head === "rules";
-      continue;
-    }
-    if (into && line.startsWith("- ")) {
-      lists[into].push(line.trimEnd());
-      continue;
-    }
-    if (into && !line.trim()) continue;
-    into = void 0;
-    summary.push(line);
-  }
-  return { summary: summary.join("\n").replace(/\n{3,}/g, "\n\n").trim(), rulesGiven, rules: lists.rules, dropped: lists.dropped };
-}
-function core(line) {
-  const c = line.replace(/^-\s*/, "").replace(/Dropped because:.*$/i, "").replace(/[`"“(].*$/, "").replace(/\s+/g, " ").trim().toLowerCase().slice(0, 40);
-  return c || line.toLowerCase();
-}
-var same = (a, b) => core(a).startsWith(core(b)) || core(b).startsWith(core(a));
-function mergeRules(previous, note) {
-  const dropped = (rule) => note.dropped.some((d) => same(d, rule));
-  if (!note.rulesGiven) return { rules: previous.filter((r) => !dropped(r)), restored: [], dropped: note.dropped };
-  const restored = previous.filter((r) => !note.rules.some((k) => same(k, r)) && !dropped(r));
-  return { rules: [...note.rules, ...restored], restored, dropped: note.dropped };
-}
-function previousRules(base, folder) {
-  if (!folder) return [];
-  let text;
-  try {
-    text = readFileSync4(join5(base, folder, "handoff.md"), "utf8");
-  } catch {
-    return [];
-  }
-  const lines = text.split("\n");
-  const start = lines.findIndex((l) => l === "## Standing rules");
-  if (start === -1) return [];
-  const end = lines.findIndex((l, k) => k > start && l.startsWith("## "));
-  return lines.slice(start + 1, end === -1 ? void 0 : end).filter((l) => l.startsWith("- ")).map((l) => l.trimEnd());
-}
-
 // src/cli/dates.ts
 var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 var DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -1131,11 +1088,11 @@ function renderHandoff(i) {
 function compose(i, level) {
   const { ex, redact } = i;
   const top = [`# ${i.project} handoff \xB7 saved ${fullDate(i.savedAt)}`, `Transcript: ${i.transcript} (L123 means line 123 of it)`];
+  if (i.worktree) top.push(`Saved from the worktree ${i.worktree}.`);
   if (ex.copied) top.push(`This session continues ${ex.copied.from.slice(0, 8)}; its earlier messages are not repeated here.`);
   if (ex.ended) top.push(`The session ended ${ENDING[ex.ended.kind]} (L${ex.ended.line}): ${redact(ex.ended.text)}`);
   if (ex.unplaced.length) top.push(`delulu could not place ${ex.unplaced.length} records (${ex.unplaced.map((l) => `L${l}`).join(", ")}); a message may be missing near them.`);
   const parts = [top.join("\n"), section("Last agent's summary (not checked)", i.note?.trim() ? redact(i.note.trim()) : "No summary was written when this was saved.")];
-  if (i.rules.length) parts.push(section("Standing rules", i.rules.map(redact).join("\n")));
   parts.push(section("Repo when saved", repoPart(i)));
   const last = lastExchange(ex, redact, level);
   if (last) parts.push(section("Last exchange", last));
@@ -1282,10 +1239,10 @@ function handoffFolders(base) {
   } catch {
     return [];
   }
-  return names.filter((f) => STAMPED.test(f) && existsSync3(join6(base, f, "handoff.md"))).map((f) => {
+  return names.filter((f) => STAMPED.test(f) && existsSync3(join5(base, f, "handoff.md"))).map((f) => {
     let t = 0;
     try {
-      const s = statSync3(join6(base, f));
+      const s = statSync3(join5(base, f));
       t = s.birthtimeMs > 0 ? s.birthtimeMs : s.mtimeMs;
     } catch {
     }
@@ -1314,20 +1271,21 @@ function main() {
   if (!log || !existsSync3(log)) return fail("could not find this session's transcript. Nothing was saved. Run it again with --log <path to the session .jsonl>.");
   let siblings = [];
   try {
-    siblings = readdirSync3(dirname2(log)).filter((f) => f.endsWith(".jsonl")).map((f) => join6(dirname2(log), f));
+    siblings = readdirSync3(dirname2(log)).filter((f) => f.endsWith(".jsonl")).map((f) => join5(dirname2(log), f));
   } catch {
   }
   const ex = extractSession(log, { siblings });
   if (!ex.turns.some((t) => t.kind === "said" || t.kind === "asked")) return fail("this session has no messages from the user yet, so there is nothing to hand off. Nothing was saved.");
-  const base = join6(repo, ".delulu-handoff");
-  const notePath = join6(base, "note.md");
-  let noteText = "";
-  try {
-    if (statSync3(notePath).mtimeMs >= (ex.startedAt ? Date.parse(ex.startedAt) : 0)) noteText = readFileSync5(notePath, "utf8");
-  } catch {
+  const home = handoffHome(repo);
+  const base = join5(home, ".delulu-handoff");
+  const notePaths = [.../* @__PURE__ */ new Set([join5(repo, ".delulu-handoff", "note.md"), join5(base, "note.md")])];
+  let note = "";
+  for (const p of notePaths) {
+    try {
+      if (!note && statSync3(p).mtimeMs >= (ex.startedAt ? Date.parse(ex.startedAt) : 0)) note = readFileSync4(p, "utf8").trim();
+    } catch {
+    }
   }
-  const note = parseNote(noteText);
-  const merged = mergeRules(previousRules(base, handoffFolders(base).at(-1)), note);
   const typed = ex.turns.flatMap((t) => t.kind === "said" ? [...t.text.matchAll(/[\w.+-]+@[\w-]+\.[\w.-]+/g)].map((m) => m[0]) : []);
   const redact = makeRedactor({ ownEmail: git(repo, ["config", "user.email"]), typedEmails: typed });
   const commit = git(repo, ["rev-parse", "--short", "HEAD"]);
@@ -1343,7 +1301,7 @@ function main() {
   let folder = stamp(now);
   for (let n = 2; ; n++) {
     try {
-      mkdirSync(join6(base, folder), { mode: 448 });
+      mkdirSync(join5(base, folder), { mode: 448 });
       break;
     } catch (e) {
       if (e.code !== "EEXIST") throw e;
@@ -1351,24 +1309,22 @@ function main() {
     }
   }
   const out = renderHandoff({
-    project: basename3(repo),
+    project: basename3(home),
     savedAt: now,
     transcript: log.replace(homedir3(), "~"),
     folder,
     ex,
-    note: note.summary || void 0,
-    rules: merged.rules,
+    note: note || void 0,
     redact,
+    worktree: repo === home ? void 0 : repo.replace(homedir3(), "~"),
     repo: { branch, commit, uncommitted: dirty, commits }
   });
-  writeFileSync(join6(base, folder, "handoff.md"), out, { mode: 384 });
-  const missed = writeImages(join6(base, folder), ex);
-  rmSync(notePath, { force: true });
-  const lines = [`delulu saved this session: .delulu-handoff/${folder}/handoff.md (about ${(Buffer.byteLength(out) / 2500).toFixed(1)}k tokens)`];
-  if (!note.summary) lines.push("No summary was written, so the next session gets the session without one. Write .delulu-handoff/note.md and save again to add it.");
-  for (const r of merged.restored) lines.push(`Put back a rule the note left out without a reason: ${r}`);
-  for (const d of merged.dropped) lines.push(`Dropped a rule: ${d}`);
-  const ignored = keepOutOfGit(repo);
+  writeFileSync(join5(base, folder, "handoff.md"), out, { mode: 384 });
+  const missed = writeImages(join5(base, folder), ex);
+  for (const p of notePaths) rmSync(p, { force: true });
+  const lines = [`delulu saved this session: ${repo === home ? "" : `${home.replace(homedir3(), "~")}/`}.delulu-handoff/${folder}/handoff.md (about ${(Buffer.byteLength(out) / 2500).toFixed(1)}k tokens)`];
+  if (!note) lines.push("No summary was written, so the next session gets the session without one. Write .delulu-handoff/note.md and save again to add it.");
+  const ignored = keepOutOfGit(home);
   if (ignored) lines.push(ignored);
   if (missed) lines.push(`${missed} image(s) could not be saved.`);
   const pruned = prune(base, folder);
@@ -1379,8 +1335,8 @@ function main() {
 }
 function keepOutOfGit(repo) {
   if (git(repo, ["rev-parse", "--git-dir"]) === void 0) return "This folder is not a git repository, so nothing keeps .delulu-handoff/ out of copies of it.";
-  const file = join6(repo, ".gitignore");
-  const current = existsSync3(file) ? readFileSync5(file, "utf8") : "";
+  const file = join5(repo, ".gitignore");
+  const current = existsSync3(file) ? readFileSync4(file, "utf8") : "";
   if (/^[ \t]*\.delulu-handoff\/?[ \t\r]*$/m.test(current)) return "";
   try {
     writeFileSync(file, `${current && !current.endsWith("\n") ? `${current}
@@ -1396,7 +1352,7 @@ function prune(base, keep) {
   const gone = older.slice(0, Math.max(0, older.length - (KEEP - 1)));
   for (const f of gone) {
     try {
-      rmSync(join6(base, f), { recursive: true, force: true });
+      rmSync(join5(base, f), { recursive: true, force: true });
     } catch {
     }
   }
@@ -1408,8 +1364,8 @@ function writeImages(folder, ex) {
     if (t.kind !== "said" || !t.images?.length) continue;
     t.images.forEach((im, k) => {
       try {
-        mkdirSync(join6(folder, "images"), { recursive: true, mode: 448 });
-        writeFileSync(join6(folder, "images", `L${t.line}-${k + 1}.${imageExt(im.mediaType)}`), Buffer.from(im.data, "base64"), { mode: 384 });
+        mkdirSync(join5(folder, "images"), { recursive: true, mode: 448 });
+        writeFileSync(join5(folder, "images", `L${t.line}-${k + 1}.${imageExt(im.mediaType)}`), Buffer.from(im.data, "base64"), { mode: 384 });
       } catch {
         missed++;
       }

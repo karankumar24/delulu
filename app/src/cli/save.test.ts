@@ -1,9 +1,9 @@
 // The capture /delulu:handoff runs: the agent's note is already written, one command, one handoff out.
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { homedir, tmpdir } from 'node:os';
 import { build } from 'esbuild';
 
 const BUNDLES = mkdtempSync(join(tmpdir(), 'delulu-save-bundle-'));
@@ -37,13 +37,13 @@ describe('save', () => {
   it('writes one handoff from the note and the transcript, and removes the note so it is never reused', () => {
     const { repo, log, base } = setup([user('fix the footer'), reply('Fixed.')]);
     mkdirSync(base);
-    writeFileSync(join(base, 'note.md'), 'Footer fixed. Next: ship.\n\n## Standing rules\n- Keep docs plain. "clean" (L1)\n');
+    writeFileSync(join(base, 'note.md'), 'Footer fixed. Next: ship.\n\nDecided this session:\n- Keep docs plain (L1)\n');
     const r = run(repo, log);
     expect(r.status).toBe(0);
     expect(folders(base)).toHaveLength(1);
     const out = readFileSync(join(base, folders(base)[0], 'handoff.md'), 'utf8');
     expect(out).toContain("## Last agent's summary (not checked)\nFooter fixed. Next: ship.");
-    expect(out).toContain('## Standing rules\n- Keep docs plain. "clean" (L1)');
+    expect(out).toContain('Decided this session:\n- Keep docs plain (L1)');
     expect(out).toContain('fix the footer');
     expect(existsSync(join(base, 'note.md'))).toBe(false);
     expect(r.stdout).toContain(folders(base)[0]);
@@ -56,15 +56,32 @@ describe('save', () => {
     expect(r.stdout).toContain('No summary was written');
   });
 
-  it("carries the previous handoff's rules forward, and puts back one the note left out without a reason", () => {
+  it('copies nothing from an earlier handoff: a handoff is about the one session it saves', () => {
     const { repo, log, base } = setup([user('go')]);
     mkdirSync(join(base, '2026-09-01T10-00-00'), { recursive: true });
-    writeFileSync(join(base, '2026-09-01T10-00-00', 'handoff.md'), '# x\n\n## Standing rules\n- Ask before subagents. "ask me" (a:L2)\n- Keep docs plain. "clean" (a:L3)\n');
-    writeFileSync(join(base, 'note.md'), 'Summary.\n\n## Standing rules\n- Keep docs plain. "clean" (a:L3)\n');
+    writeFileSync(join(base, '2026-09-01T10-00-00', 'handoff.md'), '# x\n\n## Standing rules\n- Ask before subagents. "ask me" (a:L2)\n');
+    writeFileSync(join(base, 'note.md'), 'Summary.\n');
     const r = run(repo, log);
     const out = readFileSync(join(base, folders(base).at(-1)!, 'handoff.md'), 'utf8');
-    expect(out).toContain('- Ask before subagents. "ask me" (a:L2)');
-    expect(r.stdout).toContain('Put back a rule the note left out without a reason: - Ask before subagents.');
+    expect(out).not.toContain('Ask before subagents');
+    expect(r.stdout).not.toMatch(/rule/i);
+  });
+
+  it('saves a worktree session beside the main checkout, where every worktree of the repo finds it', () => {
+    const { repo, log, base } = setup([user('fix the footer')]);
+    const tree = join(mkdtempSync(join(tmpdir(), 'delulu-save-wt-')), 'wt');
+    made.push(dirname(tree));
+    execFileSync('git', ['-C', repo, 'worktree', 'add', '-q', '-b', 'footer', tree]);
+    mkdirSync(join(tree, '.delulu-handoff'));
+    writeFileSync(join(tree, '.delulu-handoff', 'note.md'), 'Worktree note.\n');
+    const r = run(tree, log);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain(`${realpathSync(repo).replace(homedir(), '~')}/.delulu-handoff/`);
+    const out = readFileSync(join(base, folders(base)[0], 'handoff.md'), 'utf8');
+    expect(out).toContain('Worktree note.');
+    expect(out).toContain(`Saved from the worktree ${realpathSync(tree).replace(homedir(), '~')}.`);
+    expect(out).toContain('Branch `footer`');
+    expect(existsSync(join(tree, '.delulu-handoff', 'note.md'))).toBe(false);
   });
 
   it('refuses a session with no messages from the user, and writes nothing', () => {

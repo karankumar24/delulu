@@ -13,7 +13,8 @@ export interface HandoffInput {
   ex: Extraction;
   /** The agent's summary, written when saving. Nothing checks it. */
   note?: string;
-  rules: string[];
+  /** The worktree the session ran in, when it was not the main checkout. */
+  worktree?: string;
   repo: { branch?: string; commit?: string; uncommitted?: number; commits: { sha: string; subject: string }[] };
   redact: (t: string) => string;
   /** Bytes the handoff should fit in. It shrinks in a fixed order to get there. Tests set it low. */
@@ -41,12 +42,12 @@ export function renderHandoff(i: HandoffInput): string {
 function compose(i: HandoffInput, level: number): string {
   const { ex, redact } = i;
   const top = [`# ${i.project} handoff · saved ${fullDate(i.savedAt)}`, `Transcript: ${i.transcript} (L123 means line 123 of it)`];
+  if (i.worktree) top.push(`Saved from the worktree ${i.worktree}.`);
   if (ex.copied) top.push(`This session continues ${ex.copied.from.slice(0, 8)}; its earlier messages are not repeated here.`);
   if (ex.ended) top.push(`The session ended ${ENDING[ex.ended.kind]} (L${ex.ended.line}): ${redact(ex.ended.text)}`);
   if (ex.unplaced.length) top.push(`delulu could not place ${ex.unplaced.length} records (${ex.unplaced.map((l) => `L${l}`).join(', ')}); a message may be missing near them.`);
 
   const parts = [top.join('\n'), section("Last agent's summary (not checked)", i.note?.trim() ? redact(i.note.trim()) : 'No summary was written when this was saved.')];
-  if (i.rules.length) parts.push(section('Standing rules', i.rules.map(redact).join('\n')));
   parts.push(section('Repo when saved', repoPart(i)));
   const last = lastExchange(ex, redact, level);
   if (last) parts.push(section('Last exchange', last));

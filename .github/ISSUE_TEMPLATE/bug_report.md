@@ -7,7 +7,7 @@ labels: bug
 **What you expected, and what you got**
 
 **Which command**
-`/delulu:handoff`, `/delulu:resume`, or the `delulu` command directly.
+`/delulu:handoff` or `/delulu:resume`.
 
 **Anything printed**
 Paste the output if there was any. Read it first.

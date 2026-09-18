@@ -100,14 +100,14 @@ function shoutedWords(text: string): string[] {
 }
 
 describe('the handoff speaks to a person', () => {
-  const out = renderHandoff({ project: 'p', savedAt: new Date(2026, 0, 1), transcript: 't.jsonl', folder: 'F', rules: ['- a rule'], note: 'n',
+  const out = renderHandoff({ project: 'p', savedAt: new Date(2026, 0, 1), transcript: 't.jsonl', folder: 'F', note: 'n',
     redact: (t) => t, repo: { branch: 'main', commit: 'abc1234', uncommitted: 0, commits: [] },
     ex: { turns: [{ kind: 'said', line: 1, text: 'hi', how: 'typed' }], notices: [], unplaced: [], unreadable: [], replies: [{ line: 2, text: 'ok' }],
       helpers: [{ kind: 'agent', line: 3, what: 'x', ended: 'finished' }], saves: [], scheduled: [], prs: [] } });
   const headings = out.split('\n').filter((l) => l.startsWith('## ')).map((l) => l.slice(3));
 
   it('writes every part it has', () => {
-    expect(headings.length).toBeGreaterThanOrEqual(6);
+    expect(headings.length).toBeGreaterThanOrEqual(5);
   });
 
   it('has no shouted headings', () => {

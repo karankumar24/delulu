@@ -1,17 +1,16 @@
 // delulu handoff: saves this session for the next one. The agent has already written its note to
-// .delulu-handoff/note.md. This reads the transcript, git and the previous handoff's rules, and
-// writes one handoff file, asking nothing.
+// .delulu-handoff/note.md. This reads the transcript and git, and writes one handoff file, asking
+// nothing. A handoff is about the one session it saves: nothing is copied from earlier handoffs.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { git, uncommitted } from '../transcript/git';
-import { repoKey } from '../transcript/repo-key';
+import { handoffHome, repoKey } from '../transcript/repo-key';
 import { isProgram } from './entry';
 import { extractSession } from './extract';
 import type { Extraction } from './extract';
 import { makeRedactor } from './redact';
 import { resolveLog } from './resolve-log';
-import { mergeRules, parseNote, previousRules } from './rules';
 import { imageExt, renderHandoff } from './write';
 
 const KEEP = 15;
@@ -51,13 +50,16 @@ function main(): void {
   const ex = extractSession(log, { siblings });
   if (!ex.turns.some((t) => t.kind === 'said' || t.kind === 'asked')) return fail('this session has no messages from the user yet, so there is nothing to hand off. Nothing was saved.');
 
-  const base = join(repo, '.delulu-handoff');
-  const notePath = join(base, 'note.md');
+  // Handoffs live in the main checkout, so every worktree of the repo shares them. The agent writes its
+  // note in the folder it works in, which is this worktree when it is one.
+  const home = handoffHome(repo);
+  const base = join(home, '.delulu-handoff');
+  const notePaths = [...new Set([join(repo, '.delulu-handoff', 'note.md'), join(base, 'note.md')])];
   // A note older than this session belongs to an earlier save that never finished, not to this one.
-  let noteText = '';
-  try { if (statSync(notePath).mtimeMs >= (ex.startedAt ? Date.parse(ex.startedAt) : 0)) noteText = readFileSync(notePath, 'utf8'); } catch { /* no note */ }
-  const note = parseNote(noteText);
-  const merged = mergeRules(previousRules(base, handoffFolders(base).at(-1)), note);
+  let note = '';
+  for (const p of notePaths) {
+    try { if (!note && statSync(p).mtimeMs >= (ex.startedAt ? Date.parse(ex.startedAt) : 0)) note = readFileSync(p, 'utf8').trim(); } catch { /* no note here */ }
+  }
 
   const typed = ex.turns.flatMap((t) => (t.kind === 'said' ? [...t.text.matchAll(/[\w.+-]+@[\w-]+\.[\w.-]+/g)].map((m) => m[0]) : []));
   const redact = makeRedactor({ ownEmail: git(repo, ['config', 'user.email']), typedEmails: typed });
@@ -77,18 +79,16 @@ function main(): void {
       folder = `${stamp(now)}-${n}`;
     }
   }
-  const out = renderHandoff({ project: basename(repo), savedAt: now, transcript: log.replace(homedir(), '~'), folder, ex,
-    note: note.summary || undefined, rules: merged.rules, redact,
+  const out = renderHandoff({ project: basename(home), savedAt: now, transcript: log.replace(homedir(), '~'), folder, ex,
+    note: note || undefined, redact, worktree: repo === home ? undefined : repo.replace(homedir(), '~'),
     repo: { branch, commit, uncommitted: dirty, commits } });
   writeFileSync(join(base, folder, 'handoff.md'), out, { mode: 0o600 });
   const missed = writeImages(join(base, folder), ex);
-  rmSync(notePath, { force: true });
+  for (const p of notePaths) rmSync(p, { force: true });
 
-  const lines = [`delulu saved this session: .delulu-handoff/${folder}/handoff.md (about ${(Buffer.byteLength(out) / 2500).toFixed(1)}k tokens)`];
-  if (!note.summary) lines.push('No summary was written, so the next session gets the session without one. Write .delulu-handoff/note.md and save again to add it.');
-  for (const r of merged.restored) lines.push(`Put back a rule the note left out without a reason: ${r}`);
-  for (const d of merged.dropped) lines.push(`Dropped a rule: ${d}`);
-  const ignored = keepOutOfGit(repo);
+  const lines = [`delulu saved this session: ${repo === home ? '' : `${home.replace(homedir(), '~')}/`}.delulu-handoff/${folder}/handoff.md (about ${(Buffer.byteLength(out) / 2500).toFixed(1)}k tokens)`];
+  if (!note) lines.push('No summary was written, so the next session gets the session without one. Write .delulu-handoff/note.md and save again to add it.');
+  const ignored = keepOutOfGit(home);
   if (ignored) lines.push(ignored);
   if (missed) lines.push(`${missed} image(s) could not be saved.`);
   const pruned = prune(base, folder);

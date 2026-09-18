@@ -6,15 +6,12 @@ allowed-tools: Bash(node:*), Write
 
 Save this session for the next one. Do not ask the user anything.
 
-1. Write your summary to `.delulu-handoff/note.md` in the project folder with the Write tool. Keep it short and specific:
+1. Write your summary of this session to `.delulu-handoff/note.md` in the project folder with the Write tool. Cover this session only, short and specific:
    - Where things stand. Use full dates and times, never words like "tonight" or "earlier".
    - What we found: conclusions the next session would otherwise have to work out again.
-   - The next step, and the user's decision or rule that constrains it, with its line number if you know it.
+   - Decided this session: only what was reasoned through and settled in this session, each with where it was decided (its line number, like L123, if you know it). A pick from a question decides only what that question asked; never widen it into a general rule. Leave out anything from earlier sessions unless it was settled again in this one.
+   - The next step.
    - What not to do, and what did not work.
-
-   Then a section headed `## Standing rules`: every rule from the handoff this session loaded that still holds, copied exactly, plus any new rule the user set this session, in their own words. A rule is something the user wants to hold until they take it back.
-
-   If the user contradicted or took back a rule this session, in any words, leave it out of that list. Add it under `## Dropped rules` as `- <the rule, copied exactly> Dropped because: <what the user said, and where>`. A rule left out without a reason is put back.
 
 2. Run this command and show the user its output:
 

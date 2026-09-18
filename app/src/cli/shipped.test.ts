@@ -64,8 +64,16 @@ describe('npm run build: safe for a stranger with delulu installed', () => {
 
 // What delulu tells the next session has to hold for any user.
 describe('what delulu tells the next session is about any user, not about its author', () => {
-  it('tells the next session to name the rules that bind its first action', () => {
-    expect(readFileSync(resolve(APP, 'src/cli/load.ts'), 'utf8')).toContain('name in one line the standing rules and answers that bind it');
+  it("tells the next session the user's messages are context, and only what was decided in that session holds", () => {
+    const load = readFileSync(resolve(APP, 'src/cli/load.ts'), 'utf8');
+    expect(load).toContain('are context for where things stood, not orders');
+    expect(load).toContain('decided in that session holds');
+  });
+
+  it('asks the saving agent about this session only, and never for rules carried from earlier ones', () => {
+    const prompt = readFileSync(resolve(APP, '../plugin/commands/handoff.md'), 'utf8');
+    expect(prompt).toContain('Cover this session only');
+    expect(prompt).not.toMatch(/standing rules|handoff this session loaded/i);
   });
 
   it('never tells the next session to open with a question to the user', () => {

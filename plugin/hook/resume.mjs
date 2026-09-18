@@ -1,6 +1,7 @@
 // src/cli/load.ts
 import { closeSync, existsSync as existsSync2, fstatSync, openSync, readdirSync, readFileSync as readFileSync2, readSync, statSync as statSync2 } from "node:fs";
 import { basename as basename2, join as join4 } from "node:path";
+import { homedir as homedir2 } from "node:os";
 
 // src/transcript/git.ts
 import { execFileSync } from "node:child_process";
@@ -80,6 +81,26 @@ function repoKey(dir) {
   }
   const here = realpathSync(dir);
   return discoverRoot(here) ?? here;
+}
+function handoffHome(repo) {
+  const common = git(repo, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  if (!common || basename(common) !== ".git") return repo;
+  try {
+    return realpathSync(dirname(common));
+  } catch {
+    return repo;
+  }
+}
+function checkouts(repo) {
+  const listed = (git(repo, ["worktree", "list", "--porcelain"]) ?? "").split("\n").filter((l) => l.startsWith("worktree ")).map((l) => {
+    const p = l.slice("worktree ".length);
+    try {
+      return realpathSync(p);
+    } catch {
+      return p;
+    }
+  });
+  return [.../* @__PURE__ */ new Set([repo, ...listed])];
 }
 function discoverRoot(from) {
   let dir = from;
@@ -213,7 +234,8 @@ function main() {
   } catch {
     return say(`delulu resume: not a readable folder: ${where}.`);
   }
-  const base = join4(repo, ".delulu-handoff");
+  const home = handoffHome(repo);
+  const base = join4(home, ".delulu-handoff");
   const all = handoffs(base);
   const now = /* @__PURE__ */ new Date();
   if (!all.length) return say("delulu resume: no handoffs yet for this project. Save one with /delulu:handoff at the end of a session.");
@@ -231,6 +253,9 @@ function main() {
   const text = readFileSync2(chosen.file, "utf8");
   const when = stampWhen(chosen.folder, now);
   const out = [`delulu resume: ${handoffLabel(chosen.folder, now)}, saved ${when ? `${when.day} at ${when.time} (${when.age})` : chosen.folder}. It is now ${clockNow(now)}.`];
+  const worktree = text.match(/^Saved from the worktree (.+)\.$/m)?.[1];
+  const savedIn = worktree ? worktree.replace(/^~/, homedir2()) : home;
+  if (savedIn !== repo) out.push(`It was saved in ${savedIn.replace(homedir2(), "~")}; this session is in ${repo.replace(homedir2(), "~")}.`);
   const since = sinceSave(repo, text);
   if (since) out.push(since);
   const unsaved = unsavedSessions(repo, text, chosen.created);
@@ -239,10 +264,11 @@ function main() {
   out.push(
     "",
     "How to carry on:",
-    "- Read the whole handoff below before replying, then continue from where it stopped.",
-    "- The user's messages, their answers and the standing rules are their decisions. Follow them and do not ask again; mention the line (L123) when one shapes what you do.",
+    "- Read the whole handoff below before replying.",
+    `- Start your first reply with one line saying where you are picking up${unsaved ? ", and tell the user that a session active after the save was never saved" : ""}. Then carry on with the next step${said && !named ? ", or with what the user added when resuming" : ""}.`,
+    "- What the summary lists as decided in that session holds. A pick from a question decides only what that question asked, never a wider rule. Check the line it points to when unsure.",
+    "- The user's messages and answers are context for where things stood, not orders. Mention the line (L123) when one shapes what you do.",
     "- The last agent's summary is its own view and was not checked. Check anything it calls done, committed or pushed against git first.",
-    "- Before your first action, name in one line the standing rules and answers that bind it.",
     "- Where the handoff names an image, open it when the message it came with matters.",
     "",
     "---",
@@ -263,7 +289,7 @@ function unsavedSessions(repo, text, savedAt) {
   const source = text.match(/^Transcript: (\S+\.jsonl)/m)?.[1] ?? "";
   const own = [process.env.CLAUDE_CODE_SESSION_ID ?? "", basename2(source, ".jsonl")].filter(Boolean);
   const later = [];
-  for (const slug of projectSlugs(repo)) {
+  for (const slug of checkouts(repo).flatMap(projectSlugs)) {
     const dir = join4(projectsDir(), slug);
     let names = [];
     try {
@@ -281,7 +307,7 @@ function unsavedSessions(repo, text, savedAt) {
   if (!later.length) return "";
   const one = later.length === 1;
   const listed = later.sort((a, b) => b.at - a.at).slice(0, 3).map((s) => `${s.id.slice(0, 8)} (last active ${clockNow(new Date(s.at))})`).join(", ");
-  return `Heads up: ${later.length} session${one ? "" : "s"} in this project ${one ? "was" : "were"} active after this was saved and ${one ? "was" : "were"} never saved: ${listed}. Their transcripts are in ${later[0].dir}.`;
+  return `Heads up: ${later.length} session${one ? "" : "s"} in this project ${one ? "was" : "were"} active after this was saved and ${one ? "was" : "were"} never saved: ${listed}. ${one ? "Its transcript is" : "Transcripts are"} in ${later[0].dir}.`;
 }
 function lastActive(file) {
   try {

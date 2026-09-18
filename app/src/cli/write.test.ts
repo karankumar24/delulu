@@ -8,16 +8,16 @@ const base = (over: Partial<Extraction> = {}): Extraction =>
   ({ turns: [], notices: [], unplaced: [], unreadable: [], helpers: [], replies: [], saves: [], scheduled: [], prs: [], ...over });
 const input = (over: Partial<HandoffInput> = {}): HandoffInput => ({
   project: 'delulu', savedAt: new Date(2026, 8, 15, 0, 22), transcript: '~/.claude/projects/p/abc.jsonl', folder: '2026-09-15T00-22-00',
-  ex: base(), rules: [], repo: { branch: 'main', commit: 'eeff441', uncommitted: 6, commits: [] }, redact: (t) => t, ...over,
+  ex: base(), repo: { branch: 'main', commit: 'eeff441', uncommitted: 6, commits: [] }, redact: (t) => t, ...over,
 });
 
 describe('renderHandoff: layout', () => {
   it('opens with when it was saved and lays the parts out under plain names, in reading order', () => {
-    const out = renderHandoff(input({ note: 'Fixing the prune bug. Next: commit.', rules: ['- Ask before sending subagents. "ask me first" (L12)'],
+    const out = renderHandoff(input({ note: 'Fixing the prune bug. Next: commit.',
       ex: base({ turns: [{ kind: 'said', line: 2, text: 'go', how: 'typed' }], replies: [{ line: 5, text: 'Done.' }],
         helpers: [{ kind: 'agent', line: 3, what: 'Audit', ended: 'finished' }] }) }));
     expect(out.split('\n')[0]).toBe('# delulu handoff · saved Tue Sep 15, 2026 at 12:22 AM');
-    expect(out.split('\n').filter((l) => l.startsWith('## '))).toEqual(["## Last agent's summary (not checked)", '## Standing rules',
+    expect(out.split('\n').filter((l) => l.startsWith('## '))).toEqual(["## Last agent's summary (not checked)",
       '## Repo when saved', '## Last exchange', '## Subagents and background tasks', "## The user's messages, newest first"]);
     expect(out).toContain('Fixing the prune bug. Next: commit.');
   });
@@ -25,8 +25,13 @@ describe('renderHandoff: layout', () => {
   it('says plainly when no summary was written, and leaves out parts with nothing in them', () => {
     const out = renderHandoff(input());
     expect(out).toContain('No summary was written when this was saved.');
-    expect(out).not.toContain('## Standing rules');
     expect(out).not.toContain('## Subagents');
+    expect(out).not.toContain('worktree');
+  });
+
+  it('names the worktree the session ran in, when it was not the main checkout', () => {
+    expect(renderHandoff(input({ worktree: '~/code/app/.claude/worktrees/fix-footer' })))
+      .toContain('Saved from the worktree ~/code/app/.claude/worktrees/fix-footer.');
   });
 });
 

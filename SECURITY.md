@@ -12,7 +12,7 @@ adds `.delulu-handoff/` to your `.gitignore` and says that it did.
 ## What is redacted, and what is not
 
 Before a handoff is written, the text delulu takes from your session is redacted: the agent's note,
-the standing rules, your messages and answers, the agent's last reply, how the session ended, what
+your messages and answers, the agent's last reply, how the session ended, what
 each subagent was sent to do and how it ended, and the subjects of commits made during the session.
 Redaction runs before anything is shortened, so a cut can never leave part of a key behind. It matches:
 

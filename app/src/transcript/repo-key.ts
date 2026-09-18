@@ -3,7 +3,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, realpathSync, statSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import { gitEnv } from './git';
+import { git, gitEnv } from './git';
 
 /** The key for a repo: its git top level, or the directory itself when it is in no repo. */
 export function repoKey(dir: string): string {
@@ -22,6 +22,20 @@ export function repoKey(dir: string): string {
   // Throws for a path that does not exist, so the caller never creates a folder that is not the repo.
   const here = realpathSync(dir);
   return discoverRoot(here) ?? here;
+}
+
+/** Where a repo's handoffs live: its main checkout, so every git worktree of it shares one set. */
+export function handoffHome(repo: string): string {
+  const common = git(repo, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
+  if (!common || basename(common) !== '.git') return repo;
+  try { return realpathSync(dirname(common)); } catch { return repo; }
+}
+
+/** Every checkout of the repo, this one first: the folders its sessions can run in. */
+export function checkouts(repo: string): string[] {
+  const listed = (git(repo, ['worktree', 'list', '--porcelain']) ?? '').split('\n')
+    .filter((l) => l.startsWith('worktree ')).map((l) => { const p = l.slice('worktree '.length); try { return realpathSync(p); } catch { return p; } });
+  return [...new Set([repo, ...listed])];
 }
 
 /**

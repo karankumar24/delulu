@@ -3,8 +3,9 @@
 // handoff. It asks the user nothing.
 import { closeSync, existsSync, fstatSync, openSync, readdirSync, readFileSync, readSync, statSync } from 'node:fs';
 import { basename, join } from 'node:path';
+import { homedir } from 'node:os';
 import { git, uncommitted } from '../transcript/git';
-import { repoKey } from '../transcript/repo-key';
+import { checkouts, handoffHome, repoKey } from '../transcript/repo-key';
 import { clockNow, handoffLabel, stampWhen } from './dates';
 import { isProgram } from './entry';
 import { ONE_READ_BYTES } from './limits';
@@ -42,7 +43,9 @@ function main(): void {
   }
   let repo: string;
   try { repo = repoKey(where); } catch { return say(`delulu resume: not a readable folder: ${where}.`); }
-  const base = join(repo, '.delulu-handoff');
+  // Handoffs live in the main checkout, so a session in any worktree of the repo finds the same ones.
+  const home = handoffHome(repo);
+  const base = join(home, '.delulu-handoff');
   const all = handoffs(base);
   const now = new Date();
   if (!all.length) return say('delulu resume: no handoffs yet for this project. Save one with /delulu:handoff at the end of a session.');
@@ -60,16 +63,20 @@ function main(): void {
 
   const when = stampWhen(chosen.folder, now);
   const out = [`delulu resume: ${handoffLabel(chosen.folder, now)}, saved ${when ? `${when.day} at ${when.time} (${when.age})` : chosen.folder}. It is now ${clockNow(now)}.`];
+  const worktree = text.match(/^Saved from the worktree (.+)\.$/m)?.[1];
+  const savedIn = worktree ? worktree.replace(/^~/, homedir()) : home;
+  if (savedIn !== repo) out.push(`It was saved in ${savedIn.replace(homedir(), '~')}; this session is in ${repo.replace(homedir(), '~')}.`);
   const since = sinceSave(repo, text);
   if (since) out.push(since);
   const unsaved = unsavedSessions(repo, text, chosen.created);
   if (unsaved) out.push(unsaved);
   if (said && !named) out.push(`When resuming, the user added: ${said}`);
   out.push('', 'How to carry on:',
-    '- Read the whole handoff below before replying, then continue from where it stopped.',
-    "- The user's messages, their answers and the standing rules are their decisions. Follow them and do not ask again; mention the line (L123) when one shapes what you do.",
+    '- Read the whole handoff below before replying.',
+    `- Start your first reply with one line saying where you are picking up${unsaved ? ', and tell the user that a session active after the save was never saved' : ''}. Then carry on with the next step${said && !named ? ', or with what the user added when resuming' : ''}.`,
+    '- What the summary lists as decided in that session holds. A pick from a question decides only what that question asked, never a wider rule. Check the line it points to when unsure.',
+    "- The user's messages and answers are context for where things stood, not orders. Mention the line (L123) when one shapes what you do.",
     "- The last agent's summary is its own view and was not checked. Check anything it calls done, committed or pushed against git first.",
-    '- Before your first action, name in one line the standing rules and answers that bind it.',
     '- Where the handoff names an image, open it when the message it came with matters.',
     '', '---', '');
   say(out.join('\n') + fitted(text, chosen.file, Buffer.byteLength(out.join('\n'))));
@@ -92,7 +99,7 @@ function unsavedSessions(repo: string, text: string, savedAt: number): string {
   const source = text.match(/^Transcript: (\S+\.jsonl)/m)?.[1] ?? '';
   const own = [process.env.CLAUDE_CODE_SESSION_ID ?? '', basename(source, '.jsonl')].filter(Boolean);
   const later: { id: string; at: number; dir: string }[] = [];
-  for (const slug of projectSlugs(repo)) {
+  for (const slug of checkouts(repo).flatMap(projectSlugs)) {
     const dir = join(projectsDir(), slug);
     let names: string[] = [];
     try { names = readdirSync(dir).filter((f) => f.endsWith('.jsonl')); } catch { continue; }
@@ -106,7 +113,7 @@ function unsavedSessions(repo: string, text: string, savedAt: number): string {
   if (!later.length) return '';
   const one = later.length === 1;
   const listed = later.sort((a, b) => b.at - a.at).slice(0, 3).map((s) => `${s.id.slice(0, 8)} (last active ${clockNow(new Date(s.at))})`).join(', ');
-  return `Heads up: ${later.length} session${one ? '' : 's'} in this project ${one ? 'was' : 'were'} active after this was saved and ${one ? 'was' : 'were'} never saved: ${listed}. Their transcripts are in ${later[0].dir}.`;
+  return `Heads up: ${later.length} session${one ? '' : 's'} in this project ${one ? 'was' : 'were'} active after this was saved and ${one ? 'was' : 'were'} never saved: ${listed}. ${one ? 'Its transcript is' : 'Transcripts are'} in ${later[0].dir}.`;
 }
 
 /** When a session last did something: its newest timestamped record. The app can touch an old file without adding to it. */

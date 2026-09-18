@@ -314,7 +314,7 @@ for (const project of readdirSync(root, { withFileTypes: true }).filter((d) => d
     // resume prints as far as it can and names the file and line to read on, dropping the oldest
     // messages first because they sit last. (The agent's summary is not here to add: this session is
     // over, so what is measured is the floor, not the total.)
-    const page = renderHandoff({ project: 'p', savedAt: new Date(), transcript: file, folder: sid, ex, rules: [],
+    const page = renderHandoff({ project: 'p', savedAt: new Date(), transcript: file, folder: sid, ex,
       repo: { branch: 'main', commit: 'abc1234', uncommitted: 0, commits: [] }, redact: (t) => t });
     const head = Buffer.byteLength(page.split("\n## The user's messages")[0]);
     if (head > HANDOFF_BYTES) fail('everything but your own words fits one read', sid, `${head} bytes, ${head - HANDOFF_BYTES} over, after shrinking`);

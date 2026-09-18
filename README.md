@@ -8,26 +8,27 @@ Here is [what a handoff looks like](docs/example-handoff.md).
 
 ## Two commands
 
-**`/delulu:handoff`** at the end of a session. The agent writes a short note: where things stand, what it found, the next step, and what not to do. delulu adds what it can read for itself from the transcript and the repo, and saves one file.
+**`/delulu:handoff`** at the end of a session. The agent writes a short note: where things stand, what it found, what was decided, the next step, and what not to do. delulu adds what it can read for itself from the transcript and the repo, and saves one file.
 
-**`/delulu:resume`** in a fresh session. It loads the newest handoff, says what changed in the repo since it was saved, and tells the agent how to carry on. Add a few words after the command to load an older handoff by its date, or to say what you want to do first. `/delulu:resume --list` shows the handoffs you have.
+**`/delulu:resume`** in a fresh session. It loads the newest handoff, says what changed in the repo since it was saved, and tells the agent how to carry on. The agent opens with one line on where it is picking up, and tells you if a session after the save was never saved. Add a few words after the command to load an older handoff by its date, or to say what you want to do first. `/delulu:resume --list` shows the handoffs you have.
 
 Neither command asks you anything. Nothing runs in the background, and nothing is registered to fire on its own: delulu does nothing until you type one of the two.
 
 ## What a handoff holds
 
-- **The last agent's summary.** Its own view of the session. The next agent is told to check anything it calls done, committed or pushed against git before relying on it.
-- **Standing rules.** Things you asked for that hold until you take them back. They travel into every later handoff in your own words. A rule only leaves when the agent writes down why, and one that goes missing without a reason is put back.
+- **The last agent's summary.** Its own view of the session, including what was decided in it and where. The next agent is told to check anything it calls done, committed or pushed against git before relying on it.
 - **The repo when saved.** Branch, commit, uncommitted files, and the commits made during the session.
 - **The last exchange.** The agent's final reply before you saved.
 - **Subagents and background tasks.** What was sent off, and how each one ended.
-- **Your messages, newest first.** Word for word, with your answers to the agent's questions.
+- **Your messages, newest first.** Word for word, with your answers to the agent's questions. The next agent reads them as context for where things stood, not as orders.
+
+A handoff is about the one session it saves. Nothing is copied into it from older handoffs.
 
 A handoff aims to fit in one read. When a session is long, the least useful detail is shortened first; your own words never are. Line numbers point back into the transcript, so the next agent can read further when it needs to.
 
 ## What it reads, and where it goes
 
-delulu reads your session transcript from disk and writes to `.delulu-handoff/` in your repository. Nothing is sent anywhere. The folder and everything in it are readable only by you, and the first save adds `.delulu-handoff/` to your `.gitignore`. The fifteen newest handoffs are kept.
+delulu reads your session transcript from disk and writes to `.delulu-handoff/` in your repository. Every git worktree of a repository shares the same handoffs. Nothing is sent anywhere. The folder and everything in it are readable only by you, and the first save adds `.delulu-handoff/` to your `.gitignore`. The fifteen newest handoffs are kept.
 
 API keys, tokens and passwords are hidden from everything it writes. So are email addresses, apart from your own and any you typed yourself. Images you sent are saved beside the handoff exactly as they were, not redacted. [SECURITY.md](SECURITY.md) has the details.
 
@@ -47,11 +48,11 @@ Requires Node 22 or newer. In Claude Code:
 
 If the two commands do not appear straight away, run `/reload-plugins`.
 
-delulu has not been run on Windows yet. Its path handling is tested, but only on macOS. If you try it there, please open an issue either way.
+delulu has not been run on Windows yet. Its path handling is tested, but only on macOS and Linux. If you try it there, please open an issue either way.
 
 ## Limits
 
-- A handoff carries one session. Something you explained in an older session reaches the next one only through the standing rules or the agent's note.
+- A handoff carries one session, the one you saved. Something from an older session reaches the next one only if it came up again in that session.
 - Redaction matches known shapes of secrets. It will not catch a secret with no recognisable shape, or one described in words.
 - The summary is only as good as the agent that wrote it, which is why the next agent is told to check it.
 
