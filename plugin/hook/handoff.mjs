@@ -1,11 +1,11 @@
 // src/cli/save.ts
-import { chmodSync, existsSync as existsSync3, mkdirSync, readdirSync as readdirSync3, readFileSync as readFileSync4, rmSync, statSync as statSync3, writeFileSync } from "node:fs";
+import { chmodSync, existsSync as existsSync4, mkdirSync, readdirSync as readdirSync3, readFileSync as readFileSync4, rmSync, statSync as statSync3, writeFileSync as writeFileSync2 } from "node:fs";
 import { basename as basename3, dirname as dirname2, join as join5 } from "node:path";
 import { homedir as homedir3 } from "node:os";
 
 // src/transcript/git.ts
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 var REPO_LOCATION_VARS = [
   "GIT_DIR",
@@ -62,10 +62,24 @@ function onlyDeluluLine(repo, untracked) {
   removed = removed.filter((r) => !moved.includes(r));
   return !removed.length && added.length > 0 && added.every((r) => /^\.delulu-handoff\/?\s*$/.test(r));
 }
+function keepOutOfGit(repo) {
+  if (git(repo, ["rev-parse", "--git-dir"]) === void 0) return "This folder is not a git repository, so nothing keeps .delulu-handoff/ out of copies of it.";
+  const file = join(repo, ".gitignore");
+  const current = existsSync(file) ? readFileSync(file, "utf8") : "";
+  if (/^[ \t]*\.delulu-handoff\/?[ \t\r]*$/m.test(current)) return "";
+  try {
+    writeFileSync(file, `${current && !current.endsWith("\n") ? `${current}
+` : current}.delulu-handoff/
+`);
+    return "Added .delulu-handoff/ to .gitignore.";
+  } catch {
+    return "Could not add .delulu-handoff/ to .gitignore; add it before committing.";
+  }
+}
 
 // src/transcript/repo-key.ts
 import { execFileSync as execFileSync2 } from "node:child_process";
-import { existsSync, realpathSync, statSync } from "node:fs";
+import { existsSync as existsSync2, realpathSync, statSync } from "node:fs";
 import { basename, dirname, join as join2 } from "node:path";
 function repoKey(dir) {
   try {
@@ -91,8 +105,8 @@ function discoverRoot(from) {
     return void 0;
   }
   for (; ; ) {
-    if (existsSync(join2(dir, ".git"))) return dir;
-    if (existsSync(join2(dir, "HEAD")) && existsSync(join2(dir, "objects")) && existsSync(join2(dir, "refs"))) {
+    if (existsSync2(join2(dir, ".git"))) return dir;
+    if (existsSync2(join2(dir, "HEAD")) && existsSync2(join2(dir, "objects")) && existsSync2(join2(dir, "refs"))) {
       return basename(dir) === ".git" ? dirname(dir) : dir;
     }
     const parent = dirname(dir);
@@ -120,7 +134,7 @@ function isProgram(moduleUrl) {
 }
 
 // src/cli/extract.ts
-import { closeSync, existsSync as existsSync2, openSync, readdirSync, readFileSync as readFileSync3, readSync } from "node:fs";
+import { closeSync, existsSync as existsSync3, openSync, readdirSync, readFileSync as readFileSync3, readSync } from "node:fs";
 import { basename as basename2, join as join3, resolve } from "node:path";
 
 // src/transcript/files.ts
@@ -758,7 +772,7 @@ function helpersOf(log, calls, results, told) {
       }
     }
     const transcript = agent && id ? join3(log.replace(/\.jsonl$/, ""), "subagents", `agent-${id}.jsonl`) : "";
-    if (transcript && existsSync2(transcript)) {
+    if (transcript && existsSync3(transcript)) {
       helper.transcript = transcript;
       if (helper.ended !== "finished") {
         try {
@@ -973,7 +987,7 @@ function clipText(t, n, redact) {
 }
 
 // src/cli/resolve-log.ts
-import { readdirSync as readdirSync2, statSync as statSync2 } from "node:fs";
+import { closeSync as closeSync2, fstatSync, openSync as openSync2, readdirSync as readdirSync2, readSync as readSync2, statSync as statSync2 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
 import { join as join4 } from "node:path";
 function claudeHome() {
@@ -1019,9 +1033,28 @@ function resolveLog(repo, cwdHint) {
       } catch {
       }
     }
-    if (entries.length) return entries.sort((x, y) => y.mtime - x.mtime)[0].p;
+    if (!entries.length) continue;
+    const newest = entries.sort((x, y) => y.mtime - x.mtime);
+    return (newest.find((e) => asksToSave(e.p)) ?? newest[0]).p;
   }
   return null;
+}
+function asksToSave(file) {
+  try {
+    const fd = openSync2(file, "r");
+    try {
+      const size = fstatSync(fd).size;
+      const len = Math.min(size, 256e3);
+      const buf = Buffer.alloc(len);
+      readSync2(fd, buf, 0, len, size - len);
+      const tail = buf.toString("utf8");
+      return tail.includes("/delulu:handoff") || tail.includes("hook/handoff.mjs");
+    } finally {
+      closeSync2(fd);
+    }
+  } catch {
+    return false;
+  }
 }
 function resolveBySessionId() {
   const id = process.env.CLAUDE_CODE_SESSION_ID;
@@ -1229,7 +1262,7 @@ function handoffFolders(base) {
   } catch {
     return [];
   }
-  return names.filter((f) => STAMPED.test(f) && existsSync3(join5(base, f, "handoff.md"))).map((f) => {
+  return names.filter((f) => STAMPED.test(f) && existsSync4(join5(base, f, "handoff.md"))).map((f) => {
     let t = 0;
     try {
       const s = statSync3(join5(base, f));
@@ -1257,8 +1290,9 @@ function main() {
   } catch {
     return fail(`not a readable folder: ${where}. Nothing was saved.`);
   }
+  const ignored = keepOutOfGit(repo);
   const log = flag("--log") ?? resolveLog(repo, where);
-  if (!log || !existsSync3(log)) return fail("could not find this session's transcript. Nothing was saved. Run it again with --log <path to the session .jsonl>.");
+  if (!log || !existsSync4(log)) return fail("could not find this session's transcript. Nothing was saved. Run it again with --log <path to the session .jsonl>.");
   let siblings = [];
   try {
     siblings = readdirSync3(dirname2(log)).filter((f) => f.endsWith(".jsonl")).map((f) => join5(dirname2(log), f));
@@ -1313,12 +1347,11 @@ function main() {
     redact,
     repo: { branch, commit, uncommitted: dirty, commits }
   });
-  writeFileSync(join5(base, folder, "handoff.md"), out, { mode: 384 });
+  writeFileSync2(join5(base, folder, "handoff.md"), out, { mode: 384 });
   const missed = writeImages(join5(base, folder), ex);
   if (note) rmSync(notePath, { force: true });
   const lines = [`delulu saved this session: .delulu-handoff/${folder}/handoff.md (about ${(Buffer.byteLength(out) / 2500).toFixed(1)}k tokens)`];
   if (!note) lines.push(`No summary was written, so the next session gets the session without one, and no older handoff was removed. Write ${notePath.replace(`${repo}/`, "")} and save again to add it.`);
-  const ignored = keepOutOfGit(repo);
   if (ignored) lines.push(ignored);
   if (missed) lines.push(`${missed} image(s) could not be saved.`);
   const pruned = note ? prune(base, folder) : "";
@@ -1326,20 +1359,6 @@ function main() {
   lines.push("In a fresh session, type /delulu:resume to carry on.");
   process.stdout.write(`${lines.join("\n")}
 `);
-}
-function keepOutOfGit(repo) {
-  if (git(repo, ["rev-parse", "--git-dir"]) === void 0) return "This folder is not a git repository, so nothing keeps .delulu-handoff/ out of copies of it.";
-  const file = join5(repo, ".gitignore");
-  const current = existsSync3(file) ? readFileSync4(file, "utf8") : "";
-  if (/^[ \t]*\.delulu-handoff\/?[ \t\r]*$/m.test(current)) return "";
-  try {
-    writeFileSync(file, `${current && !current.endsWith("\n") ? `${current}
-` : current}.delulu-handoff/
-`);
-    return "Added .delulu-handoff/ to .gitignore.";
-  } catch {
-    return "Could not add .delulu-handoff/ to .gitignore; add it before committing.";
-  }
 }
 function prune(base, keep) {
   const older = handoffFolders(base).filter((f) => f !== keep);
@@ -1359,7 +1378,7 @@ function writeImages(folder, ex) {
     t.images.forEach((im, k) => {
       try {
         mkdirSync(join5(folder, "images"), { recursive: true, mode: 448 });
-        writeFileSync(join5(folder, "images", `L${t.line}-${k + 1}.${imageExt(im.mediaType)}`), Buffer.from(im.data, "base64"), { mode: 384 });
+        writeFileSync2(join5(folder, "images", `L${t.line}-${k + 1}.${imageExt(im.mediaType)}`), Buffer.from(im.data, "base64"), { mode: 384 });
       } catch {
         missed++;
       }

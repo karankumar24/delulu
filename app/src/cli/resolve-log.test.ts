@@ -67,6 +67,14 @@ describe('resolveLog: the session id before any guess', () => {
     expect(resolveLog('/Users/someone/original-project/.claude/worktrees/wt')).toBe(mine);
   });
 
+  it('without a session id, picks the transcript that asked to save over a newer one from another window', () => {
+    const mine = write('-repo', 'dddddddd-dddd-dddd-dddd-dddddddddddd.jsonl', '{"type":"user","message":{"content":"<command-name>/delulu:handoff</command-name>"}}\n');
+    const theirs = write('-repo', 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee.jsonl', '{"type":"user","message":{"content":"keep going"}}\n');
+    utimesSync(mine, new Date(Date.now() - 60_000), new Date(Date.now() - 60_000));
+    utimesSync(theirs, new Date(), new Date()); // the other window wrote last
+    expect(resolveLog('/repo', '/repo')).toBe(mine);
+  });
+
   it('falls back to the newest transcript when no session id is exported', () => {
     const only = write('-repo', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa.jsonl');
     expect(resolveLog('/repo', '/repo')).toBe(only);

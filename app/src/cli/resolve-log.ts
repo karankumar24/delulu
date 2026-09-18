@@ -1,6 +1,6 @@
 // Finds the transcript of the session a command runs in. Claude Code writes one .jsonl per session
 // under <config>/projects/<slug>/.
-import { readdirSync, statSync } from 'node:fs';
+import { closeSync, fstatSync, openSync, readdirSync, readSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -64,9 +64,28 @@ export function resolveLog(repo: string, cwdHint?: string): string | null {
     for (const f of names) {
       try { entries.push({ p: join(dir, f), mtime: statSync(join(dir, f)).mtimeMs }); } catch { /* skip */ }
     }
-    if (entries.length) return entries.sort((x, y) => y.mtime - x.mtime)[0].p;
+    if (!entries.length) continue;
+    // Another window can write last. The session being saved has just asked for the save, so prefer
+    // the newest transcript whose end holds that call, and guess by time only when none does.
+    const newest = entries.sort((x, y) => y.mtime - x.mtime);
+    return (newest.find((e) => asksToSave(e.p)) ?? newest[0]).p;
   }
   return null;
+}
+
+/** True when the end of a transcript holds a /delulu:handoff call: the session that is saving. */
+function asksToSave(file: string): boolean {
+  try {
+    const fd = openSync(file, 'r');
+    try {
+      const size = fstatSync(fd).size;
+      const len = Math.min(size, 256_000);
+      const buf = Buffer.alloc(len);
+      readSync(fd, buf, 0, len, size - len);
+      const tail = buf.toString('utf8');
+      return tail.includes('/delulu:handoff') || tail.includes('hook/handoff.mjs');
+    } finally { closeSync(fd); }
+  } catch { return false; }
 }
 
 /**

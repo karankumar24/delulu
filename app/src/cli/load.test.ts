@@ -2,7 +2,7 @@
 // on, and the handoff itself. It asks nothing and works the same for any user.
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { build } from 'esbuild';
@@ -179,6 +179,32 @@ describe('load: what changed since', () => {
     writeFileSync(join(dir, 'dddddddd-4.jsonl'), '{}\n');
     utimesSync(join(dir, 'dddddddd-4.jsonl'), later, later);
     expect(run(repo, config).stdout).toContain('dddddddd');
+  });
+
+  it('does not call a later session unsaved when it saved its own handoff', async () => {
+    const { repo, base, config } = repoWith();
+    const dir = join(config, 'projects', projectSlugs(repo)[0]);
+    mkdirSync(dir, { recursive: true });
+    const later = new Date(Date.now() + 600_000);
+    writeFileSync(join(dir, 'bbbbbbbb-2.jsonl'), '{}\n');
+    utimesSync(join(dir, 'bbbbbbbb-2.jsonl'), later, later);
+    handoff(base, '2026-09-10T10-00-00', '# p handoff\nTranscript: ~/x/aaaaaaaa-1.jsonl (L123 means line 123 of it)\nOLDER\n');
+    await new Promise((done) => { setTimeout(done, 20); });
+    handoff(base, '2026-09-11T10-00-00', '# p handoff\nTranscript: ~/x/bbbbbbbb-2.jsonl (L123 means line 123 of it)\n');
+    utimesSync(join(base, '2026-09-11T10-00-00'), later, later);
+    const r = run(repo, config, '2026-09-10');
+    expect(r.stdout).toContain('OLDER');
+    expect(r.stdout).not.toContain('bbbbbbbb');
+  });
+
+  it('names a note left by a save that never ran, and keeps it out of git', () => {
+    const { repo, base, config } = repoWith();
+    handoff(base, '2026-09-15T10-00-00', '# p handoff\nMAIN\n');
+    writeFileSync(join(base, 'note-cccccccc-3.md'), 'unsaved summary');
+    const r = run(repo, config);
+    expect(r.stdout).toContain('A save that never finished left a note');
+    expect(r.stdout).toContain('note-cccccccc-3.md');
+    expect(readFileSync(join(repo, '.gitignore'), 'utf8')).toContain('.delulu-handoff/');
   });
 
   it('judges a session by its last record, not by a file date the app bumped on an old transcript', () => {

@@ -1,7 +1,7 @@
 // Every git call delulu makes. GIT_DIR and its siblings override -C, and git exports them to the hooks
 // and editors it starts, so they are cleared to make -C mean the repo it names.
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const REPO_LOCATION_VARS = [
@@ -57,4 +57,16 @@ function onlyDeluluLine(repo: string, untracked: boolean): boolean {
   added = added.filter((r) => r.trim() && !moved.includes(r));
   removed = removed.filter((r) => !moved.includes(r));
   return !removed.length && added.length > 0 && added.every((r) => /^\.delulu-handoff\/?\s*$/.test(r));
+}
+
+/** Adds .delulu-handoff/ to .gitignore, or says plainly why nothing keeps the handoffs out of git. */
+export function keepOutOfGit(repo: string): string {
+  if (git(repo, ['rev-parse', '--git-dir']) === undefined) return 'This folder is not a git repository, so nothing keeps .delulu-handoff/ out of copies of it.';
+  const file = join(repo, '.gitignore');
+  const current = existsSync(file) ? readFileSync(file, 'utf8') : '';
+  if (/^[ \t]*\.delulu-handoff\/?[ \t\r]*$/m.test(current)) return '';
+  try {
+    writeFileSync(file, `${current && !current.endsWith('\n') ? `${current}\n` : current}.delulu-handoff/\n`);
+    return 'Added .delulu-handoff/ to .gitignore.';
+  } catch { return 'Could not add .delulu-handoff/ to .gitignore; add it before committing.'; }
 }

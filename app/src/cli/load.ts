@@ -4,7 +4,7 @@
 import { closeSync, existsSync, fstatSync, openSync, readdirSync, readFileSync, readSync, statSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { homedir } from 'node:os';
-import { git, uncommitted } from '../transcript/git';
+import { git, keepOutOfGit, uncommitted } from '../transcript/git';
 import { checkouts, repoKey } from '../transcript/repo-key';
 import { clockNow, handoffLabel, stampWhen } from './dates';
 import { isProgram } from './entry';
@@ -46,9 +46,18 @@ function main(): void {
   try { repo = repoKey(where); } catch { return say(`delulu resume: not a readable folder: ${where}.`); }
   const base = join(repo, '.delulu-handoff');
   const all = handoffs(base);
+  // A note left by a save that never ran: kept out of git, and named, since it is the only record of that session.
+  let left = '';
+  try {
+    const notes = readdirSync(base).filter((f) => /^note(?:-[A-Za-z0-9-]+)?\.md$/.test(f));
+    if (notes.length) {
+      const ignored = keepOutOfGit(repo);
+      left = `A save that never finished left ${notes.length === 1 ? 'a note' : `${notes.length} notes`}: ${notes.map((f) => join(base, f).replace(homedir(), '~')).join(', ')}.${ignored ? ` ${ignored}` : ''}`;
+    }
+  } catch { /* no folder yet */ }
   const now = new Date();
   const elsewhere = newerElsewhere(repo, all[0]?.created ?? 0);
-  if (!all.length) return say(['delulu resume: no handoffs yet in this folder. Save one with /delulu:handoff at the end of a session.', elsewhere].filter(Boolean).join('\n'));
+  if (!all.length) return say(['delulu resume: no handoffs yet in this folder. Save one with /delulu:handoff at the end of a session.', elsewhere, left].filter(Boolean).join('\n'));
   if (list) {
     const rows = all.map((h) => { const w = stampWhen(h.folder, now); return `- ${handoffLabel(h.folder, now)}${w ? ` · ${w.day} at ${w.time}, ${w.age}` : ''}`; });
     return say(['delulu handoffs, newest first (load one with /delulu:resume and its date):', ...rows].join('\n'));
@@ -64,9 +73,10 @@ function main(): void {
   const when = stampWhen(chosen.folder, now);
   const out = [`delulu resume: ${handoffLabel(chosen.folder, now)}, saved ${when ? `${when.day} at ${when.time} (${when.age})` : chosen.folder}. It is now ${clockNow(now)}.`];
   if (elsewhere && !named) out.push(elsewhere);
+  if (left) out.push(left);
   const since = sinceSave(repo, text);
   if (since) out.push(since);
-  const unsaved = [unsavedSessions(repo, text, chosen.created), keptGoing(text, chosen.created)].filter(Boolean).join('\n');
+  const unsaved = [unsavedSessions(repo, text, chosen.created, savedSessions(all)), keptGoing(text, chosen.created)].filter(Boolean).join('\n');
   if (unsaved) out.push(unsaved);
   if (said && !named) out.push(`When resuming, the user added: ${said}`);
   out.push('', 'How to carry on:',
@@ -91,7 +101,19 @@ function sinceSave(repo: string, text: string): string {
 }
 
 /** Sessions in this project that were active after the handoff was saved and never saved themselves. */
-function unsavedSessions(repo: string, text: string, savedAt: number): string {
+/** When each session in this folder last saved a handoff, by session id, from each handoff's Transcript line. */
+function savedSessions(all: Handoff[]): Map<string, number> {
+  const saved = new Map<string, number>();
+  for (const h of all) {
+    let head = '';
+    try { head = readFileSync(h.file, 'utf8').slice(0, 2000); } catch { continue; }
+    const id = basename(head.match(/^Transcript: (\S+\.jsonl)/m)?.[1] ?? '', '.jsonl');
+    if (id && h.created > (saved.get(id) ?? 0)) saved.set(id, h.created);
+  }
+  return saved;
+}
+
+function unsavedSessions(repo: string, text: string, savedAt: number, saved: Map<string, number>): string {
   // The session that wrote the handoff keeps working for a while after saving; it is not an unsaved one.
   const source = text.match(/^Transcript: (\S+\.jsonl)/m)?.[1] ?? '';
   const own = [process.env.CLAUDE_CODE_SESSION_ID ?? '', basename(source, '.jsonl')].filter(Boolean);
@@ -104,7 +126,8 @@ function unsavedSessions(repo: string, text: string, savedAt: number): string {
       const id = f.slice(0, -'.jsonl'.length);
       if (own.includes(id)) continue;
       const at = lastActive(join(dir, f));
-      if (at > savedAt + 60_000) later.push({ id, at, dir });
+      // A session with a handoff of its own saved after this one was saved, so it is not "never saved".
+      if (at > savedAt + 60_000 && (saved.get(id) ?? 0) <= savedAt) later.push({ id, at, dir });
     }
   }
   if (!later.length) return '';

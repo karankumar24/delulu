@@ -4,7 +4,7 @@
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { homedir } from 'node:os';
-import { git, uncommitted } from '../transcript/git';
+import { git, keepOutOfGit, uncommitted } from '../transcript/git';
 import { repoKey } from '../transcript/repo-key';
 import { isProgram } from './entry';
 import { extractSession } from './extract';
@@ -43,6 +43,9 @@ function main(): void {
   const where = flag('--repo') ?? process.cwd();
   let repo: string;
   try { repo = repoKey(where); } catch { return fail(`not a readable folder: ${where}. Nothing was saved.`); }
+  // Before anything else, even a check that can fail: the agent's note is already on disk and must
+  // never be one commit away.
+  const ignored = keepOutOfGit(repo);
   const log = flag('--log') ?? resolveLog(repo, where);
   if (!log || !existsSync(log)) return fail("could not find this session's transcript. Nothing was saved. Run it again with --log <path to the session .jsonl>.");
   let siblings: string[] = [];
@@ -95,7 +98,6 @@ function main(): void {
 
   const lines = [`delulu saved this session: .delulu-handoff/${folder}/handoff.md (about ${(Buffer.byteLength(out) / 2500).toFixed(1)}k tokens)`];
   if (!note) lines.push(`No summary was written, so the next session gets the session without one, and no older handoff was removed. Write ${notePath.replace(`${repo}/`, '')} and save again to add it.`);
-  const ignored = keepOutOfGit(repo);
   if (ignored) lines.push(ignored);
   if (missed) lines.push(`${missed} image(s) could not be saved.`);
   // A handoff without a summary is a weaker one; it never pushes out a complete one.
@@ -103,18 +105,6 @@ function main(): void {
   if (pruned) lines.push(pruned);
   lines.push('In a fresh session, type /delulu:resume to carry on.');
   process.stdout.write(`${lines.join('\n')}\n`);
-}
-
-/** Adds .delulu-handoff/ to .gitignore, or says plainly why nothing keeps the handoffs out of git. */
-function keepOutOfGit(repo: string): string {
-  if (git(repo, ['rev-parse', '--git-dir']) === undefined) return 'This folder is not a git repository, so nothing keeps .delulu-handoff/ out of copies of it.';
-  const file = join(repo, '.gitignore');
-  const current = existsSync(file) ? readFileSync(file, 'utf8') : '';
-  if (/^[ \t]*\.delulu-handoff\/?[ \t\r]*$/m.test(current)) return '';
-  try {
-    writeFileSync(file, `${current && !current.endsWith('\n') ? `${current}\n` : current}.delulu-handoff/\n`);
-    return 'Added .delulu-handoff/ to .gitignore.';
-  } catch { return 'Could not add .delulu-handoff/ to .gitignore; add it before committing.'; }
 }
 
 /** Keeps the newest handoffs. */

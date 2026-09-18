@@ -103,11 +103,12 @@ describe('save', () => {
     expect(folders(base)).toHaveLength(15);
   });
 
-  it('refuses a session with no messages from the user, and writes nothing', () => {
+  it('refuses a session with no messages from the user and saves nothing, but still keeps the folder out of git', () => {
     const { repo, log, base } = setup([reply('hello')]);
     const r = run(repo, log);
     expect(r.status).toBe(1);
     expect(existsSync(base)).toBe(false);
+    expect(readFileSync(join(repo, '.gitignore'), 'utf8')).toContain('.delulu-handoff/');
   });
 
   it('keeps handoffs out of git, without counting that edit as the user\'s change next time', () => {

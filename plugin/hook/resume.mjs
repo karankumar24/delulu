@@ -1,11 +1,11 @@
 // src/cli/load.ts
-import { closeSync as closeSync2, existsSync as existsSync3, fstatSync, openSync as openSync2, readdirSync as readdirSync2, readFileSync as readFileSync4, readSync as readSync2, statSync as statSync2 } from "node:fs";
+import { closeSync as closeSync2, existsSync as existsSync4, fstatSync, openSync as openSync2, readdirSync as readdirSync2, readFileSync as readFileSync4, readSync as readSync2, statSync as statSync2 } from "node:fs";
 import { basename as basename3, join as join5 } from "node:path";
 import { homedir as homedir3 } from "node:os";
 
 // src/transcript/git.ts
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 var REPO_LOCATION_VARS = [
   "GIT_DIR",
@@ -62,10 +62,24 @@ function onlyDeluluLine(repo, untracked) {
   removed = removed.filter((r) => !moved.includes(r));
   return !removed.length && added.length > 0 && added.every((r) => /^\.delulu-handoff\/?\s*$/.test(r));
 }
+function keepOutOfGit(repo) {
+  if (git(repo, ["rev-parse", "--git-dir"]) === void 0) return "This folder is not a git repository, so nothing keeps .delulu-handoff/ out of copies of it.";
+  const file = join(repo, ".gitignore");
+  const current = existsSync(file) ? readFileSync(file, "utf8") : "";
+  if (/^[ \t]*\.delulu-handoff\/?[ \t\r]*$/m.test(current)) return "";
+  try {
+    writeFileSync(file, `${current && !current.endsWith("\n") ? `${current}
+` : current}.delulu-handoff/
+`);
+    return "Added .delulu-handoff/ to .gitignore.";
+  } catch {
+    return "Could not add .delulu-handoff/ to .gitignore; add it before committing.";
+  }
+}
 
 // src/transcript/repo-key.ts
 import { execFileSync as execFileSync2 } from "node:child_process";
-import { existsSync, realpathSync, statSync } from "node:fs";
+import { existsSync as existsSync2, realpathSync, statSync } from "node:fs";
 import { basename, dirname, join as join2 } from "node:path";
 function repoKey(dir) {
   try {
@@ -102,8 +116,8 @@ function discoverRoot(from) {
     return void 0;
   }
   for (; ; ) {
-    if (existsSync(join2(dir, ".git"))) return dir;
-    if (existsSync(join2(dir, "HEAD")) && existsSync(join2(dir, "objects")) && existsSync(join2(dir, "refs"))) {
+    if (existsSync2(join2(dir, ".git"))) return dir;
+    if (existsSync2(join2(dir, "HEAD")) && existsSync2(join2(dir, "objects")) && existsSync2(join2(dir, "refs"))) {
       return basename(dir) === ".git" ? dirname(dir) : dir;
     }
     const parent = dirname(dir);
@@ -154,7 +168,7 @@ function isProgram(moduleUrl) {
 }
 
 // src/cli/extract.ts
-import { closeSync, existsSync as existsSync2, openSync, readdirSync, readFileSync as readFileSync3, readSync } from "node:fs";
+import { closeSync, existsSync as existsSync3, openSync, readdirSync, readFileSync as readFileSync3, readSync } from "node:fs";
 import { basename as basename2, join as join3, resolve } from "node:path";
 
 // src/transcript/files.ts
@@ -792,7 +806,7 @@ function helpersOf(log, calls, results, told) {
       }
     }
     const transcript = agent && id ? join3(log.replace(/\.jsonl$/, ""), "subagents", `agent-${id}.jsonl`) : "";
-    if (transcript && existsSync2(transcript)) {
+    if (transcript && existsSync3(transcript)) {
       helper.transcript = transcript;
       if (helper.ended !== "finished") {
         try {
@@ -1017,7 +1031,7 @@ function handoffs(base) {
   return names.flatMap((folder) => {
     if (!STAMPED.test(folder)) return [];
     const file = join5(base, folder, "handoff.md");
-    if (!existsSync3(file)) return [];
+    if (!existsSync4(file)) return [];
     let created = 0;
     try {
       const s = statSync2(join5(base, folder));
@@ -1049,9 +1063,18 @@ function main() {
   }
   const base = join5(repo, ".delulu-handoff");
   const all = handoffs(base);
+  let left = "";
+  try {
+    const notes = readdirSync2(base).filter((f) => /^note(?:-[A-Za-z0-9-]+)?\.md$/.test(f));
+    if (notes.length) {
+      const ignored = keepOutOfGit(repo);
+      left = `A save that never finished left ${notes.length === 1 ? "a note" : `${notes.length} notes`}: ${notes.map((f) => join5(base, f).replace(homedir3(), "~")).join(", ")}.${ignored ? ` ${ignored}` : ""}`;
+    }
+  } catch {
+  }
   const now = /* @__PURE__ */ new Date();
   const elsewhere = newerElsewhere(repo, all[0]?.created ?? 0);
-  if (!all.length) return say(["delulu resume: no handoffs yet in this folder. Save one with /delulu:handoff at the end of a session.", elsewhere].filter(Boolean).join("\n"));
+  if (!all.length) return say(["delulu resume: no handoffs yet in this folder. Save one with /delulu:handoff at the end of a session.", elsewhere, left].filter(Boolean).join("\n"));
   if (list) {
     const rows = all.map((h) => {
       const w = stampWhen(h.folder, now);
@@ -1067,9 +1090,10 @@ function main() {
   const when = stampWhen(chosen.folder, now);
   const out = [`delulu resume: ${handoffLabel(chosen.folder, now)}, saved ${when ? `${when.day} at ${when.time} (${when.age})` : chosen.folder}. It is now ${clockNow(now)}.`];
   if (elsewhere && !named) out.push(elsewhere);
+  if (left) out.push(left);
   const since = sinceSave(repo, text);
   if (since) out.push(since);
-  const unsaved = [unsavedSessions(repo, text, chosen.created), keptGoing(text, chosen.created)].filter(Boolean).join("\n");
+  const unsaved = [unsavedSessions(repo, text, chosen.created, savedSessions(all)), keptGoing(text, chosen.created)].filter(Boolean).join("\n");
   if (unsaved) out.push(unsaved);
   if (said && !named) out.push(`When resuming, the user added: ${said}`);
   out.push(
@@ -1095,7 +1119,21 @@ function sinceSave(repo, text) {
   const moved = branch !== m[1] ? ` (the handoff was on \`${m[1]}\`)` : "";
   return `Since the save: ${count} new commit${count === 1 ? "" : "s"} on \`${branch}\`${moved}, ${dirty} uncommitted file${dirty === 1 ? "" : "s"}.`;
 }
-function unsavedSessions(repo, text, savedAt) {
+function savedSessions(all) {
+  const saved = /* @__PURE__ */ new Map();
+  for (const h of all) {
+    let head = "";
+    try {
+      head = readFileSync4(h.file, "utf8").slice(0, 2e3);
+    } catch {
+      continue;
+    }
+    const id = basename3(head.match(/^Transcript: (\S+\.jsonl)/m)?.[1] ?? "", ".jsonl");
+    if (id && h.created > (saved.get(id) ?? 0)) saved.set(id, h.created);
+  }
+  return saved;
+}
+function unsavedSessions(repo, text, savedAt, saved) {
   const source = text.match(/^Transcript: (\S+\.jsonl)/m)?.[1] ?? "";
   const own = [process.env.CLAUDE_CODE_SESSION_ID ?? "", basename3(source, ".jsonl")].filter(Boolean);
   const later = [];
@@ -1111,7 +1149,7 @@ function unsavedSessions(repo, text, savedAt) {
       const id = f.slice(0, -".jsonl".length);
       if (own.includes(id)) continue;
       const at = lastActive(join5(dir, f));
-      if (at > savedAt + 6e4) later.push({ id, at, dir });
+      if (at > savedAt + 6e4 && (saved.get(id) ?? 0) <= savedAt) later.push({ id, at, dir });
     }
   }
   if (!later.length) return "";
@@ -1153,7 +1191,7 @@ function newerElsewhere(repo, newestHere) {
 }
 function keptGoing(text, savedAt) {
   const source = text.match(/^Transcript: (\S+\.jsonl)/m)?.[1]?.replace(/^~/, homedir3());
-  if (!source || !existsSync3(source)) return "";
+  if (!source || !existsSync4(source)) return "";
   let after = [];
   try {
     after = extractSession(source).turns.filter((t) => (t.kind === "said" || t.kind === "asked") && !!t.at && Date.parse(t.at) > savedAt + 6e4).filter((t) => !(t.kind === "said" && t.text.startsWith("/delulu:"))).map((t) => t.line);
