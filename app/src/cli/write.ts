@@ -189,8 +189,10 @@ function messageLines(ex: Extraction, redact: (t: string) => string, folder: str
       if (t.text.startsWith('/delulu:handoff')) continue;
       const sent = t.how === 'queued' ? '(sent while the agent worked) ' : '';
       const body = t.pasted ? `pasted ${t.pasted.text.split('\n').length} lines from ${t.pasted.source} (not copied here; it is at line ${t.line} of the transcript), then wrote: ${t.typed ?? ''}` : t.text;
-      const shots = (images.get(t.line) ?? []).map((f) => ` · image: .delulu-handoff/${folder}/images/${f}`).join('');
-      out.push(`- ${sent}${indent(redact(body))}${t.maybeApp ? " (may be the app's retry button)" : ''}${shots}`);
+      const files = (images.get(t.line) ?? []).map((f) => `.delulu-handoff/${folder}/images/${f}`);
+      // A message that is only an image says so, instead of an empty line with a path after it.
+      if (!body.trim() && files.length) { out.push(`- ${sent}Sent ${files.length === 1 ? 'an image' : `${files.length} images`}: ${files.join(', ')}`); continue; }
+      out.push(`- ${sent}${indent(redact(body))}${t.maybeApp ? " (may be the app's retry button)" : ''}${files.map((f) => ` · image: ${f}`).join('')}`);
     } else if (t.kind === 'asked') {
       for (const q of [...t.questions].reverse()) {
         // Past the newest answers, a plain pick keeps its question in short: a pick answers only its question.

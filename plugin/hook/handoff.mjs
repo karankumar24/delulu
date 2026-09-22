@@ -1309,8 +1309,12 @@ function messageLines(ex, redact, folder, level) {
       if (t.text.startsWith("/delulu:handoff")) continue;
       const sent = t.how === "queued" ? "(sent while the agent worked) " : "";
       const body = t.pasted ? `pasted ${t.pasted.text.split("\n").length} lines from ${t.pasted.source} (not copied here; it is at line ${t.line} of the transcript), then wrote: ${t.typed ?? ""}` : t.text;
-      const shots = (images.get(t.line) ?? []).map((f) => ` \xB7 image: .delulu-handoff/${folder}/images/${f}`).join("");
-      out.push(`- ${sent}${indent(redact(body))}${t.maybeApp ? " (may be the app's retry button)" : ""}${shots}`);
+      const files = (images.get(t.line) ?? []).map((f) => `.delulu-handoff/${folder}/images/${f}`);
+      if (!body.trim() && files.length) {
+        out.push(`- ${sent}Sent ${files.length === 1 ? "an image" : `${files.length} images`}: ${files.join(", ")}`);
+        continue;
+      }
+      out.push(`- ${sent}${indent(redact(body))}${t.maybeApp ? " (may be the app's retry button)" : ""}${files.map((f) => ` \xB7 image: ${f}`).join("")}`);
     } else if (t.kind === "asked") {
       for (const q of [...t.questions].reverse()) {
         const a = q.answer;

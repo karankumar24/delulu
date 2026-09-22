@@ -219,12 +219,13 @@ for (const project of readdirSync(root, { withFileTypes: true }).filter((d) => d
     else pass('copied records skipped');
 
     // 5. The app's own record of the last prompt is the last thing carried that was not typed while
-    // the agent was working. The app does not update that record for a queued message.
+    // the agent was working. The app does not update that record for a queued message, nor for one
+    // with no text (an image sent on its own).
     const lastPrompt = recs.reduce((v, r) => (r?.type === 'last-prompt' && str(r.lastPrompt) ? str(r.lastPrompt) : v), '');
     if (!lastPrompt) totals.noLastPrompt++;
     else {
       const lp = flat(lastPrompt).replace(/…$/, '');
-      const sent = [...said.filter((s) => s.how !== 'queued'), ...ex.notices.filter((n) => recs[n.line - 1]?.type !== 'attachment')];
+      const sent = [...said.filter((s) => s.how !== 'queued' && flat(s.text) !== ''), ...ex.notices.filter((n) => recs[n.line - 1]?.type !== 'attachment')];
       const ordered = sent.map((s) => ({ line: s.line, text: s.text })).sort((a, b) => a.line - b.line);
       const last = ordered.at(-1);
       // A message sent mid-turn joins that turn's prompt id, and the app may keep the prompt that opened it.

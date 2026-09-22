@@ -87,7 +87,9 @@ describe("renderHandoff: the user's messages", () => {
       { kind: 'relayed', line: 7, from: 'projectprevious-ee', text: 'mine the transcripts' },
       { kind: 'said', line: 8, text: '<!-- attach: Terminal -->\n> a\n> b\n\nwhy', how: 'typed', typed: 'why', pasted: { source: 'Terminal', text: 'a\nb' } },
       { kind: 'said', line: 10, text: 'look', how: 'typed', images: [{ mediaType: 'image/png', data: 'x' }] },
+      { kind: 'said', line: 12, text: '', how: 'typed', images: [{ mediaType: 'image/jpeg', data: 'y' }] },
     ] }) }));
+    expect(out).toContain('- Sent an image: .delulu-handoff/F/images/image-2.jpg\n');
     expect(out).toContain('- Stopped the agent');
     expect(out).toContain('- The app closed while the agent was working');
     expect(out).toContain('- Turned down Bash: Force push main');

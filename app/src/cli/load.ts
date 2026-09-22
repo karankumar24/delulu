@@ -75,7 +75,7 @@ function main(): void {
   const said = words.join(' ').trim();
   const q = said.toLowerCase();
   const asName = handoffName(said);
-  const named = said ? all.find((h) => (!!h.name && h.name === asName) || h.folder.startsWith(said) || (!h.name && handoffLabel(h.folder, now).toLowerCase().includes(q))) : undefined;
+  const named = said ? all.find((h) => (!!h.name && h.name === asName) || h.folder.startsWith(said) || handoffLabel(h.folder, now).toLowerCase().includes(q)) : undefined;
   const chosen = named ?? all[0];
   const text = readFileSync(chosen.file, 'utf8');
 

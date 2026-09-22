@@ -121,9 +121,21 @@ describe('load: handoffs by name', () => {
     expect(byName).toMatch(/^delulu resume: ladder-fix, saved Sep 15 at 9:00 AM/);
     expect(byName).toContain('LADDER');
     expect(byName).not.toContain('When resuming, the user added');
+    expect(run(repo, config, 'Sep', '14').stdout).toContain('OLD');
+    expect(run(repo, config, '2026-09-15T09').stdout).toContain('LADDER');
     const newest = run(repo, config, 'fix', 'the', 'footer').stdout;
     expect(newest).toContain('CAMERA');
     expect(newest).toContain('When resuming, the user added: fix the footer');
+  });
+});
+
+describe('load: a named handoff by its date', () => {
+  it('still loads a named handoff when the user gives its date', async () => {
+    const { repo, base, config } = repoWith();
+    handoff(base, '2026-09-15T09-00-00', '# ladder-fix · p handoff · saved Tue Sep 15, 2026\nLADDER\n');
+    await new Promise((done) => { setTimeout(done, 20); });
+    handoff(base, '2026-09-16T09-00-00', '# p handoff · saved Wed Sep 16, 2026\nNEWEST\n');
+    expect(run(repo, config, 'Sep', '15').stdout).toContain('LADDER');
   });
 });
 
