@@ -1,7 +1,7 @@
 // The capture /delulu:handoff runs: the agent's note is already written, one command, one handoff out.
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { build } from 'esbuild';
@@ -117,5 +117,22 @@ describe('save', () => {
     expect(readFileSync(join(repo, '.gitignore'), 'utf8')).toContain('.delulu-handoff/');
     run(repo, log);
     expect(readFileSync(join(base, folders(base).at(-1)!, 'handoff.md'), 'utf8')).toContain('no uncommitted files');
+  });
+
+  it('counts a file of the user\'s whose name only starts like the handoff folder', () => {
+    const { repo, log, base } = setup([user('go')]);
+    writeFileSync(join(repo, '.delulu-handoff-notes.txt'), 'mine');
+    run(repo, log);
+    expect(readFileSync(join(base, folders(base).at(-1)!, 'handoff.md'), 'utf8')).toContain('1 uncommitted file');
+  });
+
+  it('refuses to save through a .delulu-handoff that links somewhere else, and writes nothing there', () => {
+    const { repo, log } = setup([user('go')]);
+    const elsewhere = mkdtempSync(join(tmpdir(), 'delulu-elsewhere-'));
+    made.push(elsewhere);
+    symlinkSync(elsewhere, join(repo, '.delulu-handoff'));
+    const out = run(repo, log);
+    expect(out.stdout).toContain('nothing was saved');
+    expect(readdirSync(elsewhere)).toEqual([]);
   });
 });

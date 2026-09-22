@@ -165,8 +165,19 @@ describe('extractSession: questions', () => {
 });
 
 describe('extractSession: continued sessions', () => {
-  it('leaves out the records copied from the session it continues, and names that session', () => {
-    const parentOwn = [typed('parent message'), said('parent reply')];
+  let call = 0;
+  // A save as it lands in a transcript: the capture command runs, and reports back.
+  const run = (report: string): Rec[] => {
+    const t = `save${++call}`;
+    return [
+      { type: 'assistant', uuid: id(), timestamp: at(7), message: { role: 'assistant', content: [{ type: 'tool_use', id: t, name: 'Bash', input: { command: 'node "/p/hook/handoff.mjs"' } }] } },
+      { type: 'user', uuid: id(), timestamp: at(8), message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: t, content: report }] } },
+    ];
+  };
+  const saved = () => run('delulu saved this session: .delulu-handoff/x/handoff.md (about 1.0k tokens)');
+
+  it('leaves out the records copied from a saved session it continues, and names that session', () => {
+    const parentOwn = [typed('parent message'), said('parent reply'), ...saved()];
     const parent = write('b8f52ff0-parent', [{ type: 'queue-operation', operation: 'enqueue', timestamp: at(0), content: 'x' }, ...parentOwn]);
     const child = write('25caf7a8-child', [
       { type: 'queue-operation', operation: 'enqueue', timestamp: '2026-09-15T03:09:51.378Z', content: 'continue' },
@@ -174,7 +185,7 @@ describe('extractSession: continued sessions', () => {
       typed('child message', { timestamp: '2026-09-15T03:10:00.000Z' }),
     ]);
     const ex = extractSession(child, { siblings: [parent, child] });
-    expect(ex.copied).toEqual({ from: 'b8f52ff0-parent', fromLine: 2, untilLine: 3, records: 2 });
+    expect(ex.copied).toEqual({ from: 'b8f52ff0-parent', fromLine: 2, untilLine: 5, records: 4 });
     expect(ex.turns.map((t) => t.kind === 'said' && t.text)).toEqual(['child message']);
     // The parent is not a copy of its child, although they share records.
     const own = extractSession(parent, { siblings: [parent, child] });
@@ -182,14 +193,50 @@ describe('extractSession: continued sessions', () => {
     expect(own.turns.map((t) => t.kind === 'said' && t.text)).toEqual(['parent message']);
   });
 
+  it('leaves out a pull request linked in the saved part it copied, so an older session does not leak in', () => {
+    const pr = (n: number) => ({ type: 'pr-link', prNumber: n, prRepository: 'me/app', prUrl: `https://github.com/me/app/pull/${n}` });
+    const parentOwn = [typed('parent message'), pr(7), ...saved()];
+    const parent = write('p', [{ type: 'mode', timestamp: '2026-09-20T03:43:00.000Z' }, ...parentOwn]);
+    const child = write('c', [{ type: 'mode', timestamp: '2026-09-20T12:00:00.000Z' }, ...parentOwn, typed('child message'), pr(8)]);
+    expect(extractSession(child, { siblings: [parent, child] }).prs.map((p) => p.number)).toEqual([8]);
+  });
+
+  it('keeps everything copied from a session that was never saved, since no handoff holds it', () => {
+    const parentOwn = [typed('parent message'), said('parent reply')];
+    const parent = write('0a2267f4-parent', [{ type: 'mode', timestamp: '2026-09-20T03:43:00.000Z' }, ...parentOwn]);
+    const child = write('ae376f93-child', [{ type: 'mode', timestamp: '2026-09-20T12:00:00.000Z' }, ...parentOwn, typed('child message')]);
+    const ex = extractSession(child, { siblings: [parent, child] });
+    expect(ex.copied).toBeUndefined();
+    expect(ex.turns.map((t) => t.kind === 'said' && t.text)).toEqual(['parent message', 'child message']);
+  });
+
+  it('keeps everything copied from a session whose save failed', () => {
+    const parentOwn = [typed('parent message'), command('delulu:handoff', ''), ...run('delulu handoff: could not find this session\'s transcript. Nothing was saved.')];
+    const parent = write('p', [{ type: 'mode', timestamp: '2026-09-20T03:43:00.000Z' }, ...parentOwn]);
+    const child = write('c', [{ type: 'mode', timestamp: '2026-09-20T12:00:00.000Z' }, ...parentOwn, typed('child message')]);
+    const ex = extractSession(child, { siblings: [parent, child] });
+    expect(ex.copied).toBeUndefined();
+    expect(ex.turns.map((t) => t.kind === 'said' && t.text)).toEqual(['parent message', 'child message']);
+  });
+
+  it('keeps what the parent did after its save, which that save does not hold', () => {
+    const before = [typed('before the save'), ...saved()];
+    const after = [typed('after the save')];
+    const parent = write('p', [{ type: 'mode', timestamp: '2026-09-20T03:43:00.000Z' }, ...before, ...after]);
+    const child = write('c', [{ type: 'mode', timestamp: '2026-09-20T12:00:00.000Z' }, ...before, ...after, typed('child message')]);
+    const ex = extractSession(child, { siblings: [parent, child] });
+    expect(ex.copied).toEqual({ from: 'p', fromLine: 2, untilLine: 4, records: 3 });
+    expect(ex.turns.map((t) => t.kind === 'said' && t.text)).toEqual(['after the save', 'child message']);
+  });
+
   it('names the session it continues, not that session\'s own parent', () => {
-    const first = [typed('grandparent message')];
-    const second = [typed('parent message')];
+    const first = [typed('grandparent message'), ...saved()];
+    const second = [typed('parent message'), ...saved()];
     const grand = write('a-grand', [{ type: 'mode', timestamp: '2026-09-01T00:00:00.000Z' }, ...first]);
     const parent = write('b-parent', [{ type: 'mode', timestamp: '2026-09-02T00:00:00.000Z' }, ...first, ...second]);
     const child = write('c-child', [{ type: 'mode', timestamp: '2026-09-03T00:00:00.000Z' }, ...first, ...second, typed('child message')]);
     const ex = extractSession(child, { siblings: [grand, parent, child] });
-    expect(ex.copied).toEqual({ from: 'b-parent', fromLine: 2, untilLine: 3, records: 2 });
+    expect(ex.copied).toEqual({ from: 'b-parent', fromLine: 2, untilLine: 7, records: 6 });
     expect(ex.turns.map((t) => t.kind === 'said' && t.text)).toEqual(['child message']);
   });
 });

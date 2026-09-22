@@ -37,7 +37,7 @@ function uncommitted(repo) {
   if (status === void 0) return void 0;
   return status.split("\n").filter(Boolean).filter((row) => {
     const path = row.trim().replace(/^\S{1,2}\s+/, "");
-    if (path.startsWith(".delulu-handoff")) return false;
+    if (path === ".delulu-handoff" || path.startsWith(".delulu-handoff/")) return false;
     return path !== ".gitignore" || !onlyDeluluLine(repo, row.trim().startsWith("??"));
   }).length;
 }
@@ -541,6 +541,7 @@ function extractSession(log, opts = {}) {
   const notifications = [];
   const flow = [];
   const prs = /* @__PURE__ */ new Map();
+  const prLines = /* @__PURE__ */ new Map();
   const relayed = [];
   readFileSync3(log, "utf8").split("\n").forEach((raw, i) => {
     if (!raw.trim()) return;
@@ -556,7 +557,10 @@ function extractSession(log, opts = {}) {
     lines[i] = { type: str(r.type) || void 0, uuid: str(r.uuid) || void 0, at: str(r.timestamp) || void 0, shutdown };
     if (r.isSidechain === true) return;
     if (r.type === "assistant" || r.type === "user" || r.type === "system" && /^model_refusal/.test(str(r.subtype))) flow.push({ line, rec: r });
-    if (r.type === "pr-link" && typeof r.prNumber === "number") prs.set(r.prNumber, { number: r.prNumber, repo: str(r.prRepository), url: str(r.prUrl) });
+    if (r.type === "pr-link" && typeof r.prNumber === "number") {
+      prs.set(r.prNumber, { number: r.prNumber, repo: str(r.prRepository), url: str(r.prUrl) });
+      prLines.set(r.prNumber, line);
+    }
     const peer = r.type === "user" && obj(r.origin)?.kind === "peer" ? obj(r.origin) : void 0;
     if (peer) relayed.push({ kind: "relayed", line, ...str(r.timestamp) ? { at: str(r.timestamp) } : {}, from: str(peer.name) || str(peer.from), text: str(peer.body) });
     const originKind = obj(r.origin)?.kind;
@@ -689,10 +693,11 @@ function extractSession(log, opts = {}) {
     ...startedAt ? { startedAt } : {},
     ...ended ? { ended } : {},
     saves,
-    scheduled: scheduledOf(calls),
-    prs: [...prs.values()]
+    scheduled: scheduledOf(calls, results).filter((s) => !inCopy(s.line)),
+    prs: [...prs.values()].filter((p) => !inCopy(prLines.get(p.number)))
   };
 }
+var SAVED = "delulu saved this session:";
 var SAVE_CALL = /cli\.mjs"?\s+handoff\b|\bdelulu\s+handoff\b|\bnode\s+"[^"\n]*\/hook\/handoff\.mjs"(?!\s+--repo\b)/;
 function isSave(rec) {
   const content = obj(rec.message)?.content;
@@ -844,10 +849,11 @@ function metasOf(log) {
   }
   return out;
 }
-function scheduledOf(calls) {
+function scheduledOf(calls, results) {
   const out = [];
   let wake;
-  for (const call of calls.values()) {
+  for (const [toolId, call] of calls) {
+    if (results.get(toolId)?.isError) continue;
     if (call.name === "ScheduleWakeup") {
       wake = call.input.stop === true || typeof call.input.delaySeconds !== "number" ? void 0 : { line: call.line, what: `Wake-up in ${call.input.delaySeconds}s: ${str(call.input.reason)}` };
     }
@@ -906,7 +912,30 @@ function copiedFrom(log, lines, siblings) {
     } catch {
       continue;
     }
-    const ids = new Set([...text.matchAll(/"uuid":"([^"]+)"/g)].map((m) => m[1]));
+    const ids = /* @__PURE__ */ new Set();
+    const saveCalls = /* @__PURE__ */ new Set();
+    let pending = [];
+    for (const raw of text.split("\n")) {
+      let rec;
+      try {
+        rec = obj(JSON.parse(raw));
+      } catch {
+        continue;
+      }
+      if (!rec) continue;
+      if (typeof rec.uuid === "string") pending.push(rec.uuid);
+      if (rec.isSidechain === true) continue;
+      const content = obj(rec.message)?.content;
+      if (!Array.isArray(content)) continue;
+      for (const b of content.map(obj)) {
+        if (rec.type === "assistant" && b?.type === "tool_use" && b.name === "Bash" && SAVE_CALL.test(str(obj(b.input)?.command))) saveCalls.add(str(b.id));
+        if (rec.type === "user" && b?.type === "tool_result" && saveCalls.has(str(b.tool_use_id)) && textOf(b.content).startsWith(SAVED)) {
+          for (const u of pending) ids.add(u);
+          pending = [];
+        }
+      }
+    }
+    if (!ids.size) continue;
     let until = first;
     let records = 0;
     for (let i = first; i < lines.length; i++) {

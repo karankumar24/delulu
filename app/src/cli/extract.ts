@@ -2,7 +2,7 @@
 //
 // Everything here is read, never written by a model: the user's messages whole, each question the
 // agent asked with its options and how it was answered, the app's own prompts kept apart from the
-// user, and the records a continued session copied from the one before it left out. It is checked
+// user, and the records a continued session copied from a save of the one before it left out. It is checked
 // against every real transcript on the machine by `corpus-check.ts`, which is how a change in
 // Claude Code's transcript format shows up as a failure instead of a quietly shorter handoff.
 import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync } from 'node:fs';
@@ -148,6 +148,7 @@ export function extractSession(log: string, opts: { siblings?: string[] } = {}):
   const notifications: Notification[] = [];
   const flow: { line: number; rec: Rec }[] = [];
   const prs = new Map<number, Extraction['prs'][number]>();
+  const prLines = new Map<number, number>();
   const relayed: Relayed[] = [];
 
   readFileSync(log, 'utf8').split('\n').forEach((raw, i) => {
@@ -160,7 +161,7 @@ export function extractSession(log: string, opts: { siblings?: string[] } = {}):
     lines[i] = { type: str(r.type) || undefined, uuid: str(r.uuid) || undefined, at: str(r.timestamp) || undefined, shutdown };
     if (r.isSidechain === true) return;
     if (r.type === 'assistant' || r.type === 'user' || (r.type === 'system' && /^model_refusal/.test(str(r.subtype)))) flow.push({ line, rec: r });
-    if (r.type === 'pr-link' && typeof r.prNumber === 'number') prs.set(r.prNumber, { number: r.prNumber, repo: str(r.prRepository), url: str(r.prUrl) });
+    if (r.type === 'pr-link' && typeof r.prNumber === 'number') { prs.set(r.prNumber, { number: r.prNumber, repo: str(r.prRepository), url: str(r.prUrl) }); prLines.set(r.prNumber, line); }
     const peer = r.type === 'user' && obj(r.origin)?.kind === 'peer' ? obj(r.origin) : undefined;
     if (peer) relayed.push({ kind: 'relayed', line, ...(str(r.timestamp) ? { at: str(r.timestamp) } : {}), from: str(peer.name) || str(peer.from), text: str(peer.body) });
     const originKind = obj(r.origin)?.kind;
@@ -272,9 +273,11 @@ export function extractSession(log: string, opts: { siblings?: string[] } = {}):
   const all = [...turns, ...relayed.filter((t) => !inCopy(t.line))].sort((a, b) => a.line - b.line);
   return { turns: all, notices, ...(copied ? { copied } : {}), unplaced, unreadable: parsed.unreadable, helpers,
     replies: replies.filter((r) => !appLines.has(r.line)), ...(startedAt ? { startedAt } : {}), ...(ended ? { ended } : {}), saves,
-    scheduled: scheduledOf(calls), prs: [...prs.values()] };
+    scheduled: scheduledOf(calls, results).filter((s) => !inCopy(s.line)), prs: [...prs.values()].filter((p) => !inCopy(prLines.get(p.number)!)) };
 }
 
+/** How the capture command opens its report when the handoff was written. */
+const SAVED = 'delulu saved this session:';
 const SAVE_CALL = /cli\.mjs"?\s+handoff\b|\bdelulu\s+handoff\b|\bnode\s+"[^"\n]*\/hook\/handoff\.mjs"(?!\s+--repo\b)/;
 
 /** A save is the /delulu:handoff command, the agent starting the handoff skill, or the capture call itself. */
@@ -436,11 +439,13 @@ function metasOf(log: string): Map<string, Rec> {
 }
 
 /** Routines and wake-ups the session scheduled. They run after it ends, so the next session must know. */
-function scheduledOf(calls: Map<string, { name: string; input: Rec; line: number }>): Extraction['scheduled'] {
+function scheduledOf(calls: Map<string, { name: string; input: Rec; line: number }>, results: Map<string, Result>): Extraction['scheduled'] {
   const out: Extraction['scheduled'] = [];
   // Only the latest wake-up can still be pending: each one replaces the last, and a stop clears it.
   let wake: Extraction['scheduled'][number] | undefined;
-  for (const call of calls.values()) {
+  for (const [toolId, call] of calls) {
+    // A call that came back as an error or a refusal scheduled nothing.
+    if (results.get(toolId)?.isError) continue;
     if (call.name === 'ScheduleWakeup') {
       wake = call.input.stop === true || typeof call.input.delaySeconds !== 'number' ? undefined
         : { line: call.line, what: `Wake-up in ${call.input.delaySeconds}s: ${str(call.input.reason)}` };
@@ -484,7 +489,8 @@ function answerTo(asked: string, options: Option[], res: Result | undefined): An
 }
 
 /**
- * The earlier transcript this one continues, when it opens with that transcript's records.
+ * The earlier transcript this one continues, when it opens with that transcript's records, counting
+ * only the records up to that transcript's last save: the rest is in no handoff, so it stays.
  *
  * A continued session copies its parent's records with their uuids and times, so the uuid is the only
  * trace, and of two files sharing records the copy is the one that started later. The copy begins
@@ -505,7 +511,28 @@ function copiedFrom(log: string, lines: (Line | undefined)[], siblings: string[]
     if (!theirStart || theirStart >= start) continue;
     let text: string;
     try { text = readFileSync(sibling, 'utf8'); } catch { continue; }
-    const ids = new Set([...text.matchAll(/"uuid":"([^"]+)"/g)].map((m) => m[1]));
+    // Only what the sibling saved is in a handoff already; anything copied past its last save is kept.
+    // A save counts once the capture command reported it saved, never on the attempt alone.
+    const ids = new Set<string>();
+    const saveCalls = new Set<string>();
+    let pending: string[] = [];
+    for (const raw of text.split('\n')) {
+      let rec: Rec | undefined;
+      try { rec = obj(JSON.parse(raw)); } catch { continue; }
+      if (!rec) continue;
+      if (typeof rec.uuid === 'string') pending.push(rec.uuid);
+      if (rec.isSidechain === true) continue;
+      const content = obj(rec.message)?.content;
+      if (!Array.isArray(content)) continue;
+      for (const b of content.map(obj)) {
+        if (rec.type === 'assistant' && b?.type === 'tool_use' && b.name === 'Bash' && SAVE_CALL.test(str(obj(b.input)?.command))) saveCalls.add(str(b.id));
+        if (rec.type === 'user' && b?.type === 'tool_result' && saveCalls.has(str(b.tool_use_id)) && textOf(b.content).startsWith(SAVED)) {
+          for (const u of pending) ids.add(u);
+          pending = [];
+        }
+      }
+    }
+    if (!ids.size) continue;
     let until = first;
     let records = 0;
     for (let i = first; i < lines.length; i++) {

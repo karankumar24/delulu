@@ -40,7 +40,7 @@ export function renderHandoff(i: HandoffInput): string {
 function compose(i: HandoffInput, level: number): string {
   const { ex, redact } = i;
   const top = [`# ${i.project} handoff · saved ${fullDate(i.savedAt)}`, `Transcript: ${i.transcript} (L123 means line 123 of it)`];
-  if (ex.copied) top.push(`This session continues ${ex.copied.from.slice(0, 8)}; its earlier messages are not repeated here.`);
+  if (ex.copied) top.push(`This session continues ${ex.copied.from.slice(0, 8)}; its messages up to that session's save are in that handoff, not repeated here.`);
   if (ex.ended) top.push(`The session ended ${ENDING[ex.ended.kind]} (L${ex.ended.line}): ${redact(ex.ended.text)}`);
   if (ex.unplaced.length) top.push(`delulu could not place ${ex.unplaced.length} records (${ex.unplaced.map((l) => `L${l}`).join(', ')}); a message may be missing near them.`);
 
@@ -128,12 +128,22 @@ function firstRealLine(report: string): string {
   return '';
 }
 
-/** One line per helper, retries of the same one folded into their final outcome. */
+/** One line per helper, retries of the same one folded into their final outcome. A same-named helper
+ * that finished or is still running is its own line, not a retry: its report or state still matters. */
 function helperLines(ex: Extraction, redact: (t: string) => string, level: number): string {
   const clip = (t: string, n: number) => clipText(t, n, redact);
-  const groups = new Map<string, Helper[]>();
-  for (const h of ex.helpers) { const k = `${h.kind}:${h.what}`; (groups.get(k) ?? groups.set(k, []).get(k)!).push(h); }
-  const out = [...groups.values()].map((tries) => {
+  const groups: Helper[][] = [];
+  const latest = new Map<string, Helper[]>();
+  for (const h of ex.helpers) {
+    const k = `${h.kind}:${h.what}`;
+    const prev = latest.get(k);
+    const last = prev?.[prev.length - 1];
+    if (prev && last && last.ended !== 'finished' && last.ended !== 'running') { prev.push(h); continue; }
+    const group = [h];
+    groups.push(group);
+    latest.set(k, group);
+  }
+  const out = groups.map((tries) => {
     const h = tries[tries.length - 1];
     const earlier = tries.slice(0, -1);
     let line = `- L${h.line} ${KIND[h.kind]} "${redact(h.what)}": ${STATE[h.ended]}`;

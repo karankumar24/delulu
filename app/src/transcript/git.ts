@@ -34,7 +34,7 @@ export function uncommitted(repo: string): number | undefined {
   if (status === undefined) return undefined;
   return status.split('\n').filter(Boolean).filter((row) => {
     const path = row.trim().replace(/^\S{1,2}\s+/, '');
-    if (path.startsWith('.delulu-handoff')) return false;
+    if (path === '.delulu-handoff' || path.startsWith('.delulu-handoff/')) return false;
     return path !== '.gitignore' || !onlyDeluluLine(repo, row.trim().startsWith('??'));
   }).length;
 }

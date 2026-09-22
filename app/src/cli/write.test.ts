@@ -35,7 +35,7 @@ describe('renderHandoff: the top lines and the repo', () => {
       copied: { from: 'b8f52ff0-x', fromLine: 1, untilLine: 40, records: 40 }, unplaced: [12, 30] }) }));
     expect(out).toContain('Transcript: ~/.claude/projects/p/abc.jsonl (L123 means line 123 of it)');
     expect(out).toContain("The session ended on a usage limit (L90): You've hit your session limit");
-    expect(out).toContain('This session continues b8f52ff0; its earlier messages are not repeated here.');
+    expect(out).toContain("This session continues b8f52ff0; its messages up to that session's save are in that handoff, not repeated here.");
     expect(out).toContain('delulu could not place 2 records (L12, L30); a message may be missing near them.');
   });
 
@@ -127,6 +127,12 @@ describe('renderHandoff: subagents and background tasks', () => {
     const h = (line: number, ended: 'failed' | 'finished') => ({ kind: 'agent' as const, line, what: 'Test continuity', ended });
     const out = renderHandoff(input({ ex: base({ helpers: [h(3, 'failed'), h(4, 'failed'), h(5, 'finished')] }) }));
     expect(out.split('\n').filter((l) => l.includes('"Test continuity"'))).toEqual(['- L5 subagent "Test continuity": finished (after 2 failed tries)']);
+  });
+
+  it('keeps same-named helpers apart when an earlier one finished or is still running, since that is no retry', () => {
+    const h = (line: number, ended: 'finished' | 'running') => ({ kind: 'agent' as const, line, what: 'Audit parser', ended });
+    const out = renderHandoff(input({ ex: base({ helpers: [h(3, 'finished'), h(4, 'running')] }) }));
+    expect(out.split('\n').filter((l) => l.includes('"Audit parser"'))).toEqual(['- L3 subagent "Audit parser": finished', '- L4 subagent "Audit parser": still running when saved']);
   });
 });
 

@@ -185,6 +185,13 @@ describe('scheduled work and relayed senders, as real sessions record them', () 
     expect(stopped.scheduled).toEqual([{ line: 2, what: 'Repo health check (0 13 * * 1,4)' }]);
   });
 
+  it('lists nothing for a scheduling call that came back as an error or was refused', () => {
+    const raw = JSON.stringify({ action: 'create', body: { name: 'Repo health check', cron_expression: '0 13 * * 1,4' } });
+    const ex = extractSession(write([call('r1', 'RemoteTrigger', { __unparsedToolInput: { raw } }), result('r1', 'Error: not allowed', {}, true),
+      call('w1', 'ScheduleWakeup', { delaySeconds: 300, reason: 'CI' }), result('w1', "The user doesn't want to proceed with this tool use.", {}, true)]));
+    expect(ex.scheduled).toEqual([]);
+  });
+
   it('names the other session by its name, not its socket', () => {
     const ex = extractSession(write([user('Another Claude session sent a message: mine the transcripts',
       { isMeta: true, origin: { kind: 'peer', from: 'uds:/tmp/cc-socks/52640.sock', name: 'projectprevious-ee', body: 'mine the transcripts' } })]));

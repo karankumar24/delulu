@@ -22,13 +22,16 @@ const SECRETS = new RegExp([
 /** A value assigned to a secret-sounding name, when the value mixes letters and digits. */
 const ASSIGNED = /\b[A-Za-z0-9_]*(?:PASSWORD|PASSWD|SECRET|TOKEN|CREDENTIAL|_KEY|APIKEY)[A-Za-z0-9_]*\s*[=:]\s*(?=[^\s,]*[A-Za-z])(?=[^\s,]*[0-9])[^\s,]{12,}/gi;
 
+/** A password or secret set with `=`: the name says what it is, so the value is hidden even without a digit. */
+const ASSIGNED_PASSWORD = /\b[A-Za-z0-9_]*(?:PASSWORD|PASSWD|SECRET)[A-Za-z0-9_]*\s*=\s*[^\s,]{8,}/gi;
+
 const EMAIL = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.([A-Za-z]{2,})\b/g;
 const FILE_EXT = new Set(['ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'json', 'md', 'py', 'css', 'html', 'yml', 'yaml', 'sh']);
 
 /** Keeps the user's own address and the ones they typed themselves; hides every other one. */
 export function makeRedactor(o: { ownEmail?: string; typedEmails?: string[] } = {}): (t: string) => string {
   const keep = new Set([o.ownEmail ?? '', ...(o.typedEmails ?? [])].map((e) => e.trim().toLowerCase()).filter(Boolean));
-  return (t) => t.replace(SECRETS, '[redacted-secret]').replace(ASSIGNED, '[redacted-secret]')
+  return (t) => t.replace(SECRETS, '[redacted-secret]').replace(ASSIGNED, '[redacted-secret]').replace(ASSIGNED_PASSWORD, '[redacted-secret]')
     .replace(EMAIL, (m: string, tld: string, at: number, all: string) =>
       keep.has(m.toLowerCase()) || FILE_EXT.has(tld.toLowerCase()) || all[at - 1] === '/' ? m : '[redacted-email]');
 }

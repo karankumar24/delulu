@@ -1,5 +1,5 @@
 // src/cli/save.ts
-import { chmodSync, existsSync as existsSync4, mkdirSync, readdirSync as readdirSync3, readFileSync as readFileSync4, rmSync, statSync as statSync3, writeFileSync as writeFileSync2 } from "node:fs";
+import { chmodSync, existsSync as existsSync4, lstatSync, mkdirSync, readdirSync as readdirSync3, readFileSync as readFileSync4, rmSync, statSync as statSync3, writeFileSync as writeFileSync2 } from "node:fs";
 import { basename as basename3, dirname as dirname2, join as join5 } from "node:path";
 import { homedir as homedir3 } from "node:os";
 
@@ -37,7 +37,7 @@ function uncommitted(repo) {
   if (status === void 0) return void 0;
   return status.split("\n").filter(Boolean).filter((row) => {
     const path = row.trim().replace(/^\S{1,2}\s+/, "");
-    if (path.startsWith(".delulu-handoff")) return false;
+    if (path === ".delulu-handoff" || path.startsWith(".delulu-handoff/")) return false;
     return path !== ".gitignore" || !onlyDeluluLine(repo, row.trim().startsWith("??"));
   }).length;
 }
@@ -507,6 +507,7 @@ function extractSession(log, opts = {}) {
   const notifications = [];
   const flow = [];
   const prs = /* @__PURE__ */ new Map();
+  const prLines = /* @__PURE__ */ new Map();
   const relayed = [];
   readFileSync3(log, "utf8").split("\n").forEach((raw, i) => {
     if (!raw.trim()) return;
@@ -522,7 +523,10 @@ function extractSession(log, opts = {}) {
     lines[i] = { type: str(r.type) || void 0, uuid: str(r.uuid) || void 0, at: str(r.timestamp) || void 0, shutdown };
     if (r.isSidechain === true) return;
     if (r.type === "assistant" || r.type === "user" || r.type === "system" && /^model_refusal/.test(str(r.subtype))) flow.push({ line, rec: r });
-    if (r.type === "pr-link" && typeof r.prNumber === "number") prs.set(r.prNumber, { number: r.prNumber, repo: str(r.prRepository), url: str(r.prUrl) });
+    if (r.type === "pr-link" && typeof r.prNumber === "number") {
+      prs.set(r.prNumber, { number: r.prNumber, repo: str(r.prRepository), url: str(r.prUrl) });
+      prLines.set(r.prNumber, line);
+    }
     const peer = r.type === "user" && obj(r.origin)?.kind === "peer" ? obj(r.origin) : void 0;
     if (peer) relayed.push({ kind: "relayed", line, ...str(r.timestamp) ? { at: str(r.timestamp) } : {}, from: str(peer.name) || str(peer.from), text: str(peer.body) });
     const originKind = obj(r.origin)?.kind;
@@ -655,10 +659,11 @@ function extractSession(log, opts = {}) {
     ...startedAt ? { startedAt } : {},
     ...ended ? { ended } : {},
     saves,
-    scheduled: scheduledOf(calls),
-    prs: [...prs.values()]
+    scheduled: scheduledOf(calls, results).filter((s) => !inCopy(s.line)),
+    prs: [...prs.values()].filter((p) => !inCopy(prLines.get(p.number)))
   };
 }
+var SAVED = "delulu saved this session:";
 var SAVE_CALL = /cli\.mjs"?\s+handoff\b|\bdelulu\s+handoff\b|\bnode\s+"[^"\n]*\/hook\/handoff\.mjs"(?!\s+--repo\b)/;
 function isSave(rec) {
   const content = obj(rec.message)?.content;
@@ -810,10 +815,11 @@ function metasOf(log) {
   }
   return out;
 }
-function scheduledOf(calls) {
+function scheduledOf(calls, results) {
   const out = [];
   let wake;
-  for (const call of calls.values()) {
+  for (const [toolId, call] of calls) {
+    if (results.get(toolId)?.isError) continue;
     if (call.name === "ScheduleWakeup") {
       wake = call.input.stop === true || typeof call.input.delaySeconds !== "number" ? void 0 : { line: call.line, what: `Wake-up in ${call.input.delaySeconds}s: ${str(call.input.reason)}` };
     }
@@ -872,7 +878,30 @@ function copiedFrom(log, lines, siblings) {
     } catch {
       continue;
     }
-    const ids = new Set([...text.matchAll(/"uuid":"([^"]+)"/g)].map((m) => m[1]));
+    const ids = /* @__PURE__ */ new Set();
+    const saveCalls = /* @__PURE__ */ new Set();
+    let pending = [];
+    for (const raw of text.split("\n")) {
+      let rec;
+      try {
+        rec = obj(JSON.parse(raw));
+      } catch {
+        continue;
+      }
+      if (!rec) continue;
+      if (typeof rec.uuid === "string") pending.push(rec.uuid);
+      if (rec.isSidechain === true) continue;
+      const content = obj(rec.message)?.content;
+      if (!Array.isArray(content)) continue;
+      for (const b of content.map(obj)) {
+        if (rec.type === "assistant" && b?.type === "tool_use" && b.name === "Bash" && SAVE_CALL.test(str(obj(b.input)?.command))) saveCalls.add(str(b.id));
+        if (rec.type === "user" && b?.type === "tool_result" && saveCalls.has(str(b.tool_use_id)) && textOf(b.content).startsWith(SAVED)) {
+          for (const u of pending) ids.add(u);
+          pending = [];
+        }
+      }
+    }
+    if (!ids.size) continue;
     let until = first;
     let records = 0;
     for (let i = first; i < lines.length; i++) {
@@ -975,11 +1004,12 @@ var SECRETS = new RegExp([
   "\\b[a-zA-Z][a-zA-Z0-9+.-]*://[^\\s:@/]+:[^\\s/]{4,}@"
 ].join("|"), "g");
 var ASSIGNED = /\b[A-Za-z0-9_]*(?:PASSWORD|PASSWD|SECRET|TOKEN|CREDENTIAL|_KEY|APIKEY)[A-Za-z0-9_]*\s*[=:]\s*(?=[^\s,]*[A-Za-z])(?=[^\s,]*[0-9])[^\s,]{12,}/gi;
+var ASSIGNED_PASSWORD = /\b[A-Za-z0-9_]*(?:PASSWORD|PASSWD|SECRET)[A-Za-z0-9_]*\s*=\s*[^\s,]{8,}/gi;
 var EMAIL = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.([A-Za-z]{2,})\b/g;
 var FILE_EXT = /* @__PURE__ */ new Set(["ts", "tsx", "js", "jsx", "mjs", "cjs", "json", "md", "py", "css", "html", "yml", "yaml", "sh"]);
 function makeRedactor(o = {}) {
   const keep = new Set([o.ownEmail ?? "", ...o.typedEmails ?? []].map((e) => e.trim().toLowerCase()).filter(Boolean));
-  return (t) => t.replace(SECRETS, "[redacted-secret]").replace(ASSIGNED, "[redacted-secret]").replace(EMAIL, (m, tld, at, all) => keep.has(m.toLowerCase()) || FILE_EXT.has(tld.toLowerCase()) || all[at - 1] === "/" ? m : "[redacted-email]");
+  return (t) => t.replace(SECRETS, "[redacted-secret]").replace(ASSIGNED, "[redacted-secret]").replace(ASSIGNED_PASSWORD, "[redacted-secret]").replace(EMAIL, (m, tld, at, all) => keep.has(m.toLowerCase()) || FILE_EXT.has(tld.toLowerCase()) || all[at - 1] === "/" ? m : "[redacted-email]");
 }
 function clipText(t, n, redact) {
   const chars = Array.from(redact(t));
@@ -1112,7 +1142,7 @@ function renderHandoff(i) {
 function compose(i, level) {
   const { ex, redact } = i;
   const top = [`# ${i.project} handoff \xB7 saved ${fullDate(i.savedAt)}`, `Transcript: ${i.transcript} (L123 means line 123 of it)`];
-  if (ex.copied) top.push(`This session continues ${ex.copied.from.slice(0, 8)}; its earlier messages are not repeated here.`);
+  if (ex.copied) top.push(`This session continues ${ex.copied.from.slice(0, 8)}; its messages up to that session's save are in that handoff, not repeated here.`);
   if (ex.ended) top.push(`The session ended ${ENDING[ex.ended.kind]} (L${ex.ended.line}): ${redact(ex.ended.text)}`);
   if (ex.unplaced.length) top.push(`delulu could not place ${ex.unplaced.length} records (${ex.unplaced.map((l) => `L${l}`).join(", ")}); a message may be missing near them.`);
   const parts = [top.join("\n"), section("Last agent's summary (not checked)", i.note?.trim() ? redact(i.note.trim()) : "No summary was written when this was saved.")];
@@ -1196,12 +1226,21 @@ function firstRealLine(report) {
 }
 function helperLines(ex, redact, level) {
   const clip = (t, n) => clipText(t, n, redact);
-  const groups = /* @__PURE__ */ new Map();
+  const groups = [];
+  const latest = /* @__PURE__ */ new Map();
   for (const h of ex.helpers) {
     const k = `${h.kind}:${h.what}`;
-    (groups.get(k) ?? groups.set(k, []).get(k)).push(h);
+    const prev = latest.get(k);
+    const last = prev?.[prev.length - 1];
+    if (prev && last && last.ended !== "finished" && last.ended !== "running") {
+      prev.push(h);
+      continue;
+    }
+    const group = [h];
+    groups.push(group);
+    latest.set(k, group);
   }
-  const out = [...groups.values()].map((tries) => {
+  const out = groups.map((tries) => {
     const h = tries[tries.length - 1];
     const earlier = tries.slice(0, -1);
     let line = `- L${h.line} ${KIND[h.kind]} "${redact(h.what)}": ${STATE[h.ended]}`;
@@ -1301,6 +1340,10 @@ function main() {
   const ex = extractSession(log, { siblings });
   if (!ex.turns.some((t) => t.kind === "said" || t.kind === "asked")) return fail("this session has no messages from the user yet, so there is nothing to hand off. Nothing was saved.");
   const base = join5(repo, ".delulu-handoff");
+  try {
+    if (lstatSync(base).isSymbolicLink()) return fail(".delulu-handoff is a link to somewhere else, so nothing was saved. Replace it with a plain folder.");
+  } catch {
+  }
   const sid = process.env.CLAUDE_CODE_SESSION_ID;
   const candidates = [...sid && /^[A-Za-z0-9-]{8,}$/.test(sid) ? [join5(base, `note-${sid}.md`)] : [], join5(base, "note.md")];
   let note = "";

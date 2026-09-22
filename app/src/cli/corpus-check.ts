@@ -61,18 +61,37 @@ const neverSent: string[] = [];
 const overOneRead: string[] = [];
 const endings = new Map<string, number>();
 
+// A save is the typed command, or the agent starting the handoff skill or the capture command it runs.
+const startsSave = (r: Rec) => {
+  const content = obj(r.message)?.content;
+  return Array.isArray(content) && content.map(obj).some((b) => b?.type === 'tool_use'
+    && ((b.name === 'Skill' && str(obj(b.input)?.skill) === 'delulu:handoff') || (b.name === 'Bash' && /cli\.mjs"?\s+handoff\b|\bdelulu\s+handoff\b|\bnode\s+"[^"\n]*\/hook\/handoff\.mjs"(?!\s+-)/.test(str(obj(b.input)?.command)))));
+};
+const isSaveRec = (r: Rec) => r.isSidechain !== true
+  && ((r.type === 'user' && textOf(obj(r.message)?.content).includes('<command-name>/delulu:handoff</command-name>')) || (r.type === 'assistant' && startsSave(r)));
+
+// A save that finished, read from the capture command's own report rather than how it was started.
+const reportsSaved = (r: Rec) => r.isSidechain !== true && r.type === 'user' && Array.isArray(obj(r.message)?.content)
+  && (obj(r.message)!.content as unknown[]).map(obj).some((b) => b?.type === 'tool_result' && textOf(b.content).startsWith('delulu saved this session:'));
+
 for (const project of readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory())) {
   const dir = join(root, project.name);
   const files = readdirSync(dir).filter((f) => f.endsWith('.jsonl')).map((f) => join(dir, f));
   // Every uuid in the project and each file's first timestamp, for the copy check. Only these are
   // kept across files, since one project folder can hold a gigabyte of transcripts.
+  // A file "holds" a record only up to its last finished save: past that, no handoff has it.
   const starts = new Map<string, string>();
   const holders = new Map<string, string[]>();
   for (const f of files) {
+    let pending: string[] = [];
     for (const r of readRecords(f)) {
       if (!starts.has(f) && str(r?.timestamp)) starts.set(f, str(r!.timestamp));
       const u = str(r?.uuid);
-      if (u) (holders.get(u) ?? holders.set(u, []).get(u)!).push(f);
+      if (u) pending.push(u);
+      if (r && reportsSaved(r)) {
+        for (const p of pending) (holders.get(p) ?? holders.set(p, []).get(p)!).push(f);
+        pending = [];
+      }
     }
   }
 
@@ -190,13 +209,13 @@ for (const project of readdirSync(root, { withFileTypes: true }).filter((d) => d
     for (const s of leaked) fail('no app notice credited to you', `${sid}:${s.line}`, `"${clip(s.text)}"`);
     if (!leaked.length) pass('no app notice credited to you');
 
-    // 4. No carried turn comes from a record that an earlier-starting transcript already holds.
+    // 4. No carried turn comes from a record that an earlier-starting transcript already saved.
     const mine = starts.get(file);
     const copiedTurns = ex.turns.filter((t) => {
       const u = str(recs[t.line - 1]?.uuid);
       return (holders.get(u) ?? []).some((f) => f !== file && (starts.get(f) ?? '') < (mine ?? ''));
     });
-    if (copiedTurns.length) fail('copied records skipped', `${sid}:${copiedTurns[0].line}`, `${copiedTurns.length} turns copied from an earlier session carried as this one's`);
+    if (copiedTurns.length) fail('copied records skipped', `${sid}:${copiedTurns[0].line}`, `${copiedTurns.length} turns an earlier session already saved carried again`);
     else pass('copied records skipped');
 
     // 5. The app's own record of the last prompt is the last thing carried that was not typed while
@@ -206,10 +225,14 @@ for (const project of readdirSync(root, { withFileTypes: true }).filter((d) => d
     else {
       const lp = flat(lastPrompt).replace(/…$/, '');
       const sent = [...said.filter((s) => s.how !== 'queued'), ...ex.notices.filter((n) => recs[n.line - 1]?.type !== 'attachment')];
-      const last = sent.map((s) => ({ line: s.line, text: s.text })).sort((a, b) => a.line - b.line).pop();
+      const ordered = sent.map((s) => ({ line: s.line, text: s.text })).sort((a, b) => a.line - b.line);
+      const last = ordered.at(-1);
+      // A message sent mid-turn joins that turn's prompt id, and the app may keep the prompt that opened it.
+      const pid = (line: number) => str(recs[line - 1]?.promptId);
+      const sameTurn = !!last && !!pid(last.line) && ordered.some((s) => pid(s.line) === pid(last.line) && flat(s.text).startsWith(lp));
       // A continued session's record can still hold the last prompt of the session it copied.
       const fromCopy = !!ex.copied && delivered.some((d) => !own(d.line) && flat(d.text).startsWith(lp));
-      if (BARE_COMMAND.test(lp) || (last && flat(last.text).startsWith(lp)) || fromCopy) pass('last prompt matches');
+      if (BARE_COMMAND.test(lp) || (last && flat(last.text).startsWith(lp)) || sameTurn || fromCopy) pass('last prompt matches');
       else fail('last prompt matches', sid, `app says "${clip(lp, 60)}", last carried is ${last ? `"${clip(last.text, 60)}" (L${last.line})` : 'nothing'}`);
     }
 
@@ -292,14 +315,7 @@ for (const project of readdirSync(root, { withFileTypes: true }).filter((d) => d
     else pass('app errors never carried as replies');
 
     // 9. Every /delulu:handoff run is marked where it happened.
-    // A save can also be the agent starting the handoff skill, or the capture command it runs.
-    const startsSave = (r: Rec) => {
-      const content = obj(r.message)?.content;
-      return Array.isArray(content) && content.map(obj).some((b) => b?.type === 'tool_use'
-        && ((b.name === 'Skill' && str(obj(b.input)?.skill) === 'delulu:handoff') || (b.name === 'Bash' && /cli\.mjs"?\s+handoff\b|\bdelulu\s+handoff\b|\bnode\s+"[^"\n]*\/hook\/handoff\.mjs"(?!\s+-)/.test(str(obj(b.input)?.command)))));
-    };
-    const saved = recs.flatMap((r, i) => (r && r.isSidechain !== true && own(i + 1)
-      && ((r.type === 'user' && textOf(obj(r.message)?.content).includes('<command-name>/delulu:handoff</command-name>')) || (r.type === 'assistant' && startsSave(r))) ? [i + 1] : []));
+    const saved = recs.flatMap((r, i) => (r && own(i + 1) && isSaveRec(r) ? [i + 1] : []));
     if (saved.join() !== ex.saves.join()) fail('every save marked', sid, `ran at ${saved.join(', ') || 'none'}, marked ${ex.saves.join(', ') || 'none'}`);
     else pass('every save marked');
 

@@ -1,7 +1,7 @@
 // delulu handoff: saves this session for the next one. The agent has already written its note to
 // .delulu-handoff/note-<session id>.md. This reads the transcript and git, and writes one handoff file, asking
 // nothing. A handoff is about the one session it saves: nothing is copied from earlier handoffs.
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { git, keepOutOfGit, uncommitted } from '../transcript/git';
@@ -54,6 +54,8 @@ function main(): void {
   if (!ex.turns.some((t) => t.kind === 'said' || t.kind === 'asked')) return fail('this session has no messages from the user yet, so there is nothing to hand off. Nothing was saved.');
 
   const base = join(repo, '.delulu-handoff');
+  // A link here would send writes, and the pruning of old handoffs, somewhere outside this folder.
+  try { if (lstatSync(base).isSymbolicLink()) return fail('.delulu-handoff is a link to somewhere else, so nothing was saved. Replace it with a plain folder.'); } catch { /* not there yet */ }
   // Each session writes its own note, so two sessions saving in one folder never take each other's.
   // A plain note.md is read only when this session's own note is missing.
   const sid = process.env.CLAUDE_CODE_SESSION_ID;
