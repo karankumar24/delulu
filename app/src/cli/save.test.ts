@@ -42,11 +42,25 @@ describe('save', () => {
     expect(r.status).toBe(0);
     expect(folders(base)).toHaveLength(1);
     const out = readFileSync(join(base, folders(base)[0], 'handoff.md'), 'utf8');
-    expect(out).toContain("## Last agent's summary (not checked)\nFooter fixed. Next: ship.");
+    expect(out).toContain("## Last agent's summary (not checked, so confirm anything it calls done, committed or pushed with git)\nFooter fixed. Next: ship.");
     expect(out).toContain('Decided this session:\n- Keep docs plain (L1)');
     expect(out).toContain('fix the footer');
     expect(existsSync(join(base, 'note.md'))).toBe(false);
-    expect(r.stdout).toContain(folders(base)[0]);
+    expect(r.stdout).toMatch(/^delulu saved this session: \w{3} \d{1,2} handoff$/m);
+  });
+
+  it("names the handoff with the agent's name line, keeps it out of the summary, and never reuses a name", () => {
+    const { repo, log, base } = setup([user('fix the footer'), reply('Fixed.')]);
+    mkdirSync(base);
+    writeFileSync(join(base, 'note.md'), 'name: Footer fix, part one!\n\nFooter fixed. Next: ship.\n');
+    const first = run(repo, log);
+    expect(first.stdout).toMatch(/^delulu saved this session: footer-fix-part-one$/m);
+    const out = readFileSync(join(base, folders(base)[0], 'handoff.md'), 'utf8');
+    expect(out.split('\n')[0]).toMatch(/^# footer-fix-part-one · delulu-save-\S+ handoff · saved /);
+    expect(out).toContain('pushed with git)\nFooter fixed. Next: ship.');
+    expect(out).not.toContain('name:');
+    writeFileSync(join(base, 'note.md'), '**Name:** footer fix part one\nSecond pass.\n');
+    expect(run(repo, log).stdout).toMatch(/^delulu saved this session: footer-fix-part-one-2$/m);
   });
 
   it('still saves when no note was written, and says so', () => {

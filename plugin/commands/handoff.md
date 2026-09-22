@@ -7,9 +7,10 @@ allowed-tools: Bash(node:*), Write
 Save this session for the next one. Do not ask the user anything.
 
 1. Write your summary of this session to `.delulu-handoff/note-${CLAUDE_SESSION_ID}.md` in the project folder with the Write tool. Cover this session only, short and specific:
-   - Where things stand. Use full dates and times, never words like "tonight" or "earlier".
+   - First line: `name: ` and 2 to 5 plain words saying what this session was about, like `name: ladder fix live check`. It is how the user will find this handoff again.
+   - Where things stand. Use real dates, never words like "tonight" or "earlier".
    - What we found: conclusions the next session would otherwise have to work out again.
-   - Decided this session: only what was reasoned through and settled in this session, each with where it was decided (its line number, like L123, if you know it). A pick from a question decides only what that question asked; never widen it into a general rule. Leave out anything from earlier sessions unless it was settled again in this one.
+   - Decided this session: only what was reasoned through and settled in this session, each with the user's own words that settled it, quoted briefly, when there were any. A pick from a question decides only what that question asked; never widen it into a general rule. Leave out anything from earlier sessions unless it was settled again in this one.
    - The next step.
    - What not to do, and what did not work.
 

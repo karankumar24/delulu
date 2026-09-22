@@ -16,8 +16,8 @@ describe('renderHandoff: layout', () => {
     const out = renderHandoff(input({ note: 'Fixing the prune bug. Next: commit.',
       ex: base({ turns: [{ kind: 'said', line: 2, text: 'go', how: 'typed' }], replies: [{ line: 5, text: 'Done.' }],
         helpers: [{ kind: 'agent', line: 3, what: 'Audit', ended: 'finished' }] }) }));
-    expect(out.split('\n')[0]).toBe('# delulu handoff · saved Tue Sep 15, 2026 at 12:22 AM');
-    expect(out.split('\n').filter((l) => l.startsWith('## '))).toEqual(["## Last agent's summary (not checked)",
+    expect(out.split('\n')[0]).toBe('# delulu handoff · saved Tue Sep 15, 2026');
+    expect(out.split('\n').filter((l) => l.startsWith('## '))).toEqual(["## Last agent's summary (not checked, so confirm anything it calls done, committed or pushed with git)",
       '## Repo when saved', '## Last exchange', '## Subagents and background tasks', "## The user's messages, newest first"]);
     expect(out).toContain('Fixing the prune bug. Next: commit.');
   });
@@ -33,10 +33,11 @@ describe('renderHandoff: the top lines and the repo', () => {
   it('names how the session ended, what it continues, and records it could not place', () => {
     const out = renderHandoff(input({ ex: base({ ended: { kind: 'limit', line: 90, text: "You've hit your session limit" },
       copied: { from: 'b8f52ff0-x', fromLine: 1, untilLine: 40, records: 40 }, unplaced: [12, 30] }) }));
-    expect(out).toContain('Transcript: ~/.claude/projects/p/abc.jsonl (L123 means line 123 of it)');
-    expect(out).toContain("The session ended on a usage limit (L90): You've hit your session limit");
-    expect(out).toContain("This session continues b8f52ff0; its messages up to that session's save are in that handoff, not repeated here.");
-    expect(out).toContain('delulu could not place 2 records (L12, L30); a message may be missing near them.');
+    expect(out).toContain('Transcript: ~/.claude/projects/p/abc.jsonl\n');
+    expect(out).toContain("The session ended on a usage limit: You've hit your session limit");
+    expect(out).toContain('This chat was reopened from an earlier one. What came before that one was saved is in its own handoff, not repeated here.');
+    expect(out).not.toContain('b8f52ff0');
+    expect(out).toContain('delulu could not read 2 entries of the transcript (lines 12, 30); a message may be missing there.');
   });
 
   it('shows the repo when saved, the commits made this session, and linked pull requests', () => {
@@ -51,17 +52,18 @@ describe('renderHandoff: the top lines and the repo', () => {
 describe("renderHandoff: the user's messages", () => {
   const at = new Date(2026, 8, 15, 0, 22).toISOString();
 
-  it('lists what the user said newest first, whole, with line, time and how it was sent', () => {
+  it('lists what the user said newest first, whole, and how it was sent, with no line numbers or times', () => {
     const out = renderHandoff(input({ ex: base({ turns: [
       { kind: 'said', line: 2, at, text: 'first\n\nwith a second paragraph', how: 'typed' },
       { kind: 'said', line: 9, at, text: 'stop, do the sort bug', how: 'queued' },
       { kind: 'said', line: 12, at, text: 'Try again', how: 'typed', maybeApp: true },
     ] }) }));
     const part = out.slice(out.indexOf("## The user's messages"));
-    expect(part).toContain("- L12 · Sep 15, 12:22 AM: Try again (may be the app's retry button)");
-    expect(part).toContain('- L9 · Sep 15, 12:22 AM, sent while the agent worked: stop, do the sort bug');
-    expect(part).toContain('- L2 · Sep 15, 12:22 AM: first\n\n  with a second paragraph');
-    expect(part.indexOf('L12')).toBeLessThan(part.indexOf('- L2 '));
+    expect(part).toContain("- Try again (may be the app's retry button)");
+    expect(part).toContain('- (sent while the agent worked) stop, do the sort bug');
+    expect(part).toContain('- first\n\n  with a second paragraph');
+    expect(part.indexOf('Try again')).toBeLessThan(part.indexOf('- first'));
+    expect(part).not.toMatch(/\bL\d|12:22/);
   });
 
   it('shows each answer with its question, the meaning of a short pick, and words the user typed', () => {
@@ -72,10 +74,10 @@ describe("renderHandoff: the user's messages", () => {
       q('Anything else?', [], { outcome: 'answered', items: [{ text: 'fix the footer too', picked: false }], notes: 'urgent' }),
       q('Merge?', [], { outcome: 'app-closed' }),
     ] }] }) }));
-    expect(out).toContain('- L5 · asked "Which fix first?": picked "Prune" (Deletes newest handoffs east of UTC.)');
-    expect(out).toContain('- L5 · asked "Ship now?": took the agent\'s recommendation "Ship after the live test"');
-    expect(out).toContain('- L5 · asked "Anything else?": wrote: fix the footer too · notes: urgent');
-    expect(out).toContain('- L5 · asked "Merge?": the app closed before an answer');
+    expect(out).toContain('- Asked "Which fix first?": picked "Prune" (Deletes newest handoffs east of UTC.)');
+    expect(out).toContain('- Asked "Ship now?": took the agent\'s recommendation "Ship after the live test"');
+    expect(out).toContain('- Asked "Anything else?": wrote: fix the footer too · notes: urgent');
+    expect(out).toContain('- Asked "Merge?": the app closed before an answer');
   });
 
   it('marks stops, app closes, refusals, pastes, images and other sessions, never as the user speaking', () => {
@@ -86,12 +88,12 @@ describe("renderHandoff: the user's messages", () => {
       { kind: 'said', line: 8, text: '<!-- attach: Terminal -->\n> a\n> b\n\nwhy', how: 'typed', typed: 'why', pasted: { source: 'Terminal', text: 'a\nb' } },
       { kind: 'said', line: 10, text: 'look', how: 'typed', images: [{ mediaType: 'image/png', data: 'x' }] },
     ] }) }));
-    expect(out).toContain('- L3 · stopped the agent');
-    expect(out).toContain('- L4 · the app closed while the agent was working');
-    expect(out).toContain('- L6 · turned down Bash: Force push main');
-    expect(out).toContain('- L7 · another session (projectprevious-ee) sent this, not the user: mine the transcripts');
-    expect(out).toContain('- L8: pasted 2 lines from Terminal (see the transcript), then wrote: why');
-    expect(out).toContain('- L10: look · image: .delulu-handoff/F/images/L10-1.png');
+    expect(out).toContain('- Stopped the agent');
+    expect(out).toContain('- The app closed while the agent was working');
+    expect(out).toContain('- Turned down Bash: Force push main');
+    expect(out).toContain('- Another session ("projectprevious-ee") sent this, not the user: mine the transcripts');
+    expect(out).toContain('- pasted 2 lines from Terminal (not copied here; it is at line 8 of the transcript), then wrote: why');
+    expect(out).toContain('- look · image: .delulu-handoff/F/images/image-1.png');
   });
 });
 
@@ -101,8 +103,8 @@ describe('renderHandoff: last exchange', () => {
       replies: [{ line: 10, text: 'Older reply.' }, { line: 18, text: 'Both fixes are in.\n\nNext is the check.' }, { line: 22, text: 'Saved.' }],
       turns: [{ kind: 'said', line: 16, text: 'good', how: 'typed' }, { kind: 'said', line: 20, text: '/delulu:handoff and push next', how: 'command' }] }) }));
     const part = out.slice(out.indexOf('## Last exchange'), out.indexOf("## The user's messages"));
-    expect(part).toContain("The agent's last reply (L18):\nBoth fixes are in.\n\nNext is the check.");
-    expect(part).toContain('When saving, the user added (L20): and push next');
+    expect(part).toContain("The agent's last reply:\nBoth fixes are in.\n\nNext is the check.");
+    expect(part).toContain('When saving, the user added: and push next');
     expect(part).not.toContain('Saved.');
     expect(out.slice(out.indexOf("## The user's messages"))).not.toContain('/delulu:handoff');
   });
@@ -116,23 +118,23 @@ describe('renderHandoff: subagents and background tasks', () => {
       { kind: 'command', line: 5, what: 'Run the tests', ended: 'running' },
       { kind: 'agent', line: 6, what: 'Check docs', ended: 'not started', how: 'Tool permission request failed: AbortError' },
     ], scheduled: [{ line: 7, what: 'Repo health check (0 13 * * 1,4)' }] }) }));
-    expect(out).toContain('- L3 subagent "Audit parser": finished. Report starts: "Three bugs, all in the queued path." · full report: /t/agent-a1.jsonl');
-    expect(out).toContain('- L4 subagent "Build kerb": failed (Agent "Build kerb" failed: session limit) · last words: "Halfway through the kerb." · changed: /r/a.ts, /r/b.ts · worked on branch `worktree-agent-a2`');
-    expect(out).toContain('- L5 background command "Run the tests": still running when saved');
-    expect(out).toContain('- L6 subagent "Check docs": never started (Tool permission request failed: AbortError)');
+    expect(out).toContain('- Subagent "Audit parser": finished. Report starts: "Three bugs, all in the queued path." · full report: /t/agent-a1.jsonl');
+    expect(out).toContain('- Subagent "Build kerb": failed (Agent "Build kerb" failed: session limit) · last words: "Halfway through the kerb." · changed: /r/a.ts, /r/b.ts · worked on branch `worktree-agent-a2`');
+    expect(out).toContain('- Background command "Run the tests": still running when saved');
+    expect(out).toContain('- Subagent "Check docs": never started (Tool permission request failed: AbortError)');
     expect(out).toContain('Still scheduled: Repo health check (0 13 * * 1,4)');
   });
 
   it('folds retries of the same helper into one line with its final outcome', () => {
     const h = (line: number, ended: 'failed' | 'finished') => ({ kind: 'agent' as const, line, what: 'Test continuity', ended });
     const out = renderHandoff(input({ ex: base({ helpers: [h(3, 'failed'), h(4, 'failed'), h(5, 'finished')] }) }));
-    expect(out.split('\n').filter((l) => l.includes('"Test continuity"'))).toEqual(['- L5 subagent "Test continuity": finished (after 2 failed tries)']);
+    expect(out.split('\n').filter((l) => l.includes('"Test continuity"'))).toEqual(['- Subagent "Test continuity": finished (after 2 failed tries)']);
   });
 
   it('keeps same-named helpers apart when an earlier one finished or is still running, since that is no retry', () => {
     const h = (line: number, ended: 'finished' | 'running') => ({ kind: 'agent' as const, line, what: 'Audit parser', ended });
     const out = renderHandoff(input({ ex: base({ helpers: [h(3, 'finished'), h(4, 'running')] }) }));
-    expect(out.split('\n').filter((l) => l.includes('"Audit parser"'))).toEqual(['- L3 subagent "Audit parser": finished', '- L4 subagent "Audit parser": still running when saved']);
+    expect(out.split('\n').filter((l) => l.includes('"Audit parser"'))).toEqual(['- Subagent "Audit parser": finished', '- Subagent "Audit parser": still running when saved']);
   });
 });
 
@@ -149,10 +151,10 @@ describe('renderHandoff: fitting one read', () => {
     const out = renderHandoff(input({ ex, budgetBytes: 10_000 }));
     expect(out).toContain(typed);
     expect(out).not.toContain('Report starts');
-    expect(out).toContain('(rest at L800)');
-    expect(out).toMatch(/- L2 · asked "Question 0 about the parser [^"]*…": took the agent's recommendation "Keep it"/);
+    expect(out).toContain('(the rest is at line 800 of the transcript)');
+    expect(out).toMatch(/- Asked "Question 0 about the parser [^"]*…": took the agent's recommendation "Keep it"/);
     expect(out).not.toContain(`Question 0 ${'about the parser '.repeat(8)}?`);
-    expect(out).toContain('- L2 · asked "Question 59');
+    expect(out).toContain('- Asked "Question 59');
   });
 
   it('leaves a handoff that already fits exactly as it is', () => {
@@ -173,7 +175,7 @@ describe('renderHandoff: details found on a real session', () => {
   it('keeps a multi-line typed answer inside its list item', () => {
     const out = renderHandoff(input({ ex: base({ turns: [{ kind: 'asked', line: 5, before: '', questions: [{ question: 'Build it?', options: [],
       answer: { outcome: 'answered', items: [{ text: 'not yet\n\nshow me first', picked: false }] } }] }] }) }));
-    expect(out).toContain('- L5 · asked "Build it?": wrote: not yet\n\n  show me first');
+    expect(out).toContain('- Asked "Build it?": wrote: not yet\n\n  show me first');
   });
 });
 
@@ -182,7 +184,7 @@ describe('renderHandoff: which save', () => {
     const out = renderHandoff(input({ ex: base({ saves: [30, 36],
       replies: [{ line: 20, text: 'Both fixes are in.' }, { line: 33, text: 'Reading the draft back now.' }],
       turns: [{ kind: 'said', line: 25, text: 'wrap up and handoff', how: 'queued' }] }) }));
-    expect(out).toContain("The agent's last reply (L20):\nBoth fixes are in.");
+    expect(out).toContain("The agent's last reply:\nBoth fixes are in.");
     expect(out).not.toContain('Reading the draft back now.');
   });
 });

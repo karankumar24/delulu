@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { clockNow, fullDate, handoffLabel, shortTime, stampWhen } from './dates';
+import { clockNow, fullDay, handoffLabel, stampWhen } from './dates';
 
 const NOW = new Date(2026, 7, 26, 12, 0, 0); // Aug 26 2026, local
 
@@ -45,7 +45,6 @@ describe('handoffLabel', () => {
 describe('clock strings', () => {
   it('writes midnight and noon the way a clock does', () => {
     expect(clockNow(new Date(2026, 8, 15, 0, 5))).toBe('Tue Sep 15 at 12:05 AM');
-    expect(fullDate(new Date(2026, 8, 15, 12, 30))).toBe('Tue Sep 15, 2026 at 12:30 PM');
-    expect(shortTime('not a time')).toBe('');
+    expect(fullDay(new Date(2026, 8, 15, 12, 30))).toBe('Tue Sep 15, 2026');
   });
 });

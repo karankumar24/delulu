@@ -1,12 +1,16 @@
 // The handoff the next agent reads: plain names, the parts it needs before its first move first, and
-// depth left on disk behind line numbers and paths. Everything is redacted before it is shortened.
-import { fullDate, shortTime } from './dates';
+// depth left on disk: the user's words are verbatim, so the transcript can be searched for them, and a
+// line number is given only where something was left out. Everything is redacted before it is shortened.
+import { homedir } from 'node:os';
+import { fullDay } from './dates';
 import { HANDOFF_BYTES } from './limits';
 import { clipText } from './redact';
 import type { Extraction, Helper, Question } from './extract';
 
 export interface HandoffInput {
   project: string;
+  /** What the saving agent called this session, already cleaned. Handoffs without one go by their date. */
+  name?: string;
   savedAt: Date;
   transcript: string;
   folder: string;
@@ -39,12 +43,12 @@ export function renderHandoff(i: HandoffInput): string {
 /** Level 1: older picks keep their question only in short. 2: report excerpts go. 3: a long last reply is cut. */
 function compose(i: HandoffInput, level: number): string {
   const { ex, redact } = i;
-  const top = [`# ${i.project} handoff · saved ${fullDate(i.savedAt)}`, `Transcript: ${i.transcript} (L123 means line 123 of it)`];
-  if (ex.copied) top.push(`This session continues ${ex.copied.from.slice(0, 8)}; its messages up to that session's save are in that handoff, not repeated here.`);
-  if (ex.ended) top.push(`The session ended ${ENDING[ex.ended.kind]} (L${ex.ended.line}): ${redact(ex.ended.text)}`);
-  if (ex.unplaced.length) top.push(`delulu could not place ${ex.unplaced.length} records (${ex.unplaced.map((l) => `L${l}`).join(', ')}); a message may be missing near them.`);
+  const top = [`# ${i.name ? `${i.name} · ` : ''}${i.project} handoff · saved ${fullDay(i.savedAt)}`, `Transcript: ${i.transcript}`];
+  if (ex.copied) top.push('This chat was reopened from an earlier one. What came before that one was saved is in its own handoff, not repeated here.');
+  if (ex.ended) top.push(`The session ended ${ENDING[ex.ended.kind]}: ${redact(ex.ended.text)}`);
+  if (ex.unplaced.length) top.push(`delulu could not read ${ex.unplaced.length} entr${ex.unplaced.length === 1 ? 'y' : 'ies'} of the transcript (line${ex.unplaced.length === 1 ? '' : 's'} ${ex.unplaced.join(', ')}); a message may be missing there.`);
 
-  const parts = [top.join('\n'), section("Last agent's summary (not checked)", i.note?.trim() ? redact(i.note.trim()) : 'No summary was written when this was saved.')];
+  const parts = [top.join('\n'), section("Last agent's summary (not checked, so confirm anything it calls done, committed or pushed with git)", i.note?.trim() ? redact(i.note.trim()) : 'No summary was written when this was saved.')];
   parts.push(section('Repo when saved', repoPart(i)));
   const last = lastExchange(ex, redact, level);
   if (last) parts.push(section('Last exchange', last));
@@ -79,9 +83,9 @@ function lastExchange(ex: Extraction, redact: (t: string) => string, level: numb
   const lines: string[] = [];
   if (reply) {
     const text = level >= 3 ? clipText(reply.text, 1500, redact) : redact(reply.text);
-    lines.push(`The agent's last reply (L${reply.line}):\n${text}${level >= 3 && text.endsWith('…') ? ` (rest at L${reply.line})` : ''}`);
+    lines.push(`The agent's last reply:\n${text}${level >= 3 && text.endsWith('…') ? ` (the rest is at line ${reply.line} of the transcript)` : ''}`);
   }
-  if (added) lines.push(`When saving, the user added (L${save}): ${redact(added)}`);
+  if (added) lines.push(`When saving, the user added: ${redact(added)}`);
   return lines.join('\n\n');
 }
 
@@ -106,12 +110,12 @@ function answerText(q: Question, redact: (t: string) => string): string {
   return `${items.join('; ')}${a.notes ? ` · notes: ${redact(a.notes)}` : ''}`;
 }
 
-export function imageExt(mediaType: string): string {
+function imageExt(mediaType: string): string {
   const sub = (mediaType.toLowerCase().split('/')[1] ?? '').split('+')[0].replace(/[^a-z0-9]/g, '');
   return sub === 'jpeg' ? 'jpg' : sub || 'img';
 }
 
-const KIND: Record<Helper['kind'], string> = { agent: 'subagent', command: 'background command', workflow: 'workflow' };
+const KIND: Record<Helper['kind'], string> = { agent: 'Subagent', command: 'Background command', workflow: 'Workflow' };
 const STATE: Record<Helper['ended'], string> = {
   finished: 'finished', failed: 'failed', stopped: 'stopped', running: 'still running when saved',
   'no record': 'lost track of when the app restarted', 'not started': 'never started',
@@ -146,7 +150,7 @@ function helperLines(ex: Extraction, redact: (t: string) => string, level: numbe
   const out = groups.map((tries) => {
     const h = tries[tries.length - 1];
     const earlier = tries.slice(0, -1);
-    let line = `- L${h.line} ${KIND[h.kind]} "${redact(h.what)}": ${STATE[h.ended]}`;
+    let line = `- ${KIND[h.kind]} "${redact(h.what)}": ${STATE[h.ended]}`;
     if (h.how && h.ended !== 'finished' && h.ended !== 'running') line += ` (${clip(h.how, 200)})`;
     if (earlier.length) line += ` (after ${earlier.length} ${earlier.every((e) => e.ended === 'failed') ? 'failed' : 'earlier'} tr${earlier.length === 1 ? 'y' : 'ies'})`;
     const first = h.report ? firstRealLine(h.report) : '';
@@ -155,11 +159,21 @@ function helperLines(ex: Extraction, redact: (t: string) => string, level: numbe
     if (h.files?.length) line += ` · changed: ${h.files.slice(0, 5).map(redact).join(', ')}${h.files.length > 5 ? ` (+${h.files.length - 5} more)` : ''}`;
     if (h.branch) line += ` · worked on branch \`${h.branch}\``;
     if (h.started?.length) line += ` · started: ${h.started.map(redact).join(', ')}`;
-    if (h.transcript) line += ` · ${h.ended === 'finished' ? 'full report' : 'transcript'}: ${h.transcript}`;
+    if (h.transcript) line += ` · ${h.ended === 'finished' ? 'full report' : 'transcript'}: ${h.transcript.replace(homedir(), '~')}`;
     return line;
   });
   for (const s of ex.scheduled) out.push(`Still scheduled: ${redact(s.what)}`);
   return out.join('\n');
+}
+
+/** Where each image the user sent is saved beside the handoff, numbered in the order they were sent. */
+export function imageFiles(ex: Extraction): Map<number, string[]> {
+  const files = new Map<number, string[]>();
+  let n = 0;
+  for (const t of ex.turns) {
+    if (t.kind === 'said' && t.images?.length) files.set(t.line, t.images.map((im) => `image-${++n}.${imageExt(im.mediaType)}`));
+  }
+  return files;
 }
 
 /** Keeps a multi-line message inside its list item. */
@@ -168,16 +182,15 @@ const indent = (text: string) => text.split('\n').map((l, k) => (k === 0 || !l ?
 /** Everything the user did, newest first. Their words are never shortened. */
 function messageLines(ex: Extraction, redact: (t: string) => string, folder: string, level: number): string {
   const out: string[] = [];
+  const images = imageFiles(ex);
   let shown = 0;
   for (const t of [...ex.turns].reverse()) {
-    const when = shortTime(t.at);
-    const head = `- L${t.line}${when ? ` · ${when}` : ''}`;
     if (t.kind === 'said') {
       if (t.text.startsWith('/delulu:handoff')) continue;
-      const sent = t.how === 'queued' ? ', sent while the agent worked' : '';
-      const body = t.pasted ? `pasted ${t.pasted.text.split('\n').length} lines from ${t.pasted.source} (see the transcript), then wrote: ${t.typed ?? ''}` : t.text;
-      const shots = (t.images ?? []).map((im, k) => ` · image: .delulu-handoff/${folder}/images/L${t.line}-${k + 1}.${imageExt(im.mediaType)}`).join('');
-      out.push(`${head}${sent}: ${indent(redact(body))}${t.maybeApp ? " (may be the app's retry button)" : ''}${shots}`);
+      const sent = t.how === 'queued' ? '(sent while the agent worked) ' : '';
+      const body = t.pasted ? `pasted ${t.pasted.text.split('\n').length} lines from ${t.pasted.source} (not copied here; it is at line ${t.line} of the transcript), then wrote: ${t.typed ?? ''}` : t.text;
+      const shots = (images.get(t.line) ?? []).map((f) => ` · image: .delulu-handoff/${folder}/images/${f}`).join('');
+      out.push(`- ${sent}${indent(redact(body))}${t.maybeApp ? " (may be the app's retry button)" : ''}${shots}`);
     } else if (t.kind === 'asked') {
       for (const q of [...t.questions].reverse()) {
         // Past the newest answers, a plain pick keeps its question in short: a pick answers only its question.
@@ -185,12 +198,12 @@ function messageLines(ex: Extraction, redact: (t: string) => string, folder: str
         const pick = a.outcome === 'answered' && a.items.length === 1 && a.items[0].picked ? a.items[0].text : '';
         if (level >= 1 && shown++ >= RECENT_ANSWERS && pick) {
           const label = pick.replace(RECOMMENDED, '');
-          out.push(`${head} · asked "${clipText(q.question, 90, redact)}": ${label !== pick ? `took the agent's recommendation "${redact(label)}"` : `picked "${redact(label)}"`}`);
-        } else out.push(`${head} · asked "${redact(q.question)}": ${indent(answerText(q, redact))}`);
+          out.push(`- Asked "${clipText(q.question, 90, redact)}": ${label !== pick ? `took the agent's recommendation "${redact(label)}"` : `picked "${redact(label)}"`}`);
+        } else out.push(`- Asked "${redact(q.question)}": ${indent(answerText(q, redact))}`);
       }
-    } else if (t.kind === 'stopped') out.push(`${head} · ${t.appClosed ? 'the app closed while the agent was working' : 'stopped the agent'}`);
-    else if (t.kind === 'refused') out.push(`${head} · turned down ${t.tool}: ${redact(t.what)}`);
-    else out.push(`${head} · another session (${t.from}) sent this, not the user: ${indent(redact(t.text))}`);
+    } else if (t.kind === 'stopped') out.push(`- ${t.appClosed ? 'The app closed while the agent was working' : 'Stopped the agent'}`);
+    else if (t.kind === 'refused') out.push(`- Turned down ${t.tool}: ${redact(t.what)}`);
+    else out.push(`- Another session ("${t.from}") sent this, not the user: ${indent(redact(t.text))}`);
   }
   return out.join('\n');
 }

@@ -1,7 +1,7 @@
 // src/cli/save.ts
 import { chmodSync, existsSync as existsSync4, lstatSync, mkdirSync, readdirSync as readdirSync3, readFileSync as readFileSync4, rmSync, statSync as statSync3, writeFileSync as writeFileSync2 } from "node:fs";
 import { basename as basename3, dirname as dirname2, join as join5 } from "node:path";
-import { homedir as homedir3 } from "node:os";
+import { homedir as homedir4 } from "node:os";
 
 // src/transcript/git.ts
 import { execFileSync } from "node:child_process";
@@ -1107,14 +1107,47 @@ function resolveBySessionId() {
 }
 
 // src/cli/dates.ts
+var STAMP = /^(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})(?:-\d+)?$/;
 var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 var DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 var clock = (d) => `${d.getHours() % 12 || 12}:${String(d.getMinutes()).padStart(2, "0")} ${d.getHours() < 12 ? "AM" : "PM"}`;
-var fullDate = (d) => `${DAYS[d.getDay()]} ${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} at ${clock(d)}`;
-function shortTime(iso) {
-  const d = iso ? new Date(iso) : void 0;
-  return d && !Number.isNaN(d.getTime()) ? `${MONTHS[d.getMonth()]} ${d.getDate()}, ${clock(d)}` : "";
+var fullDay = (d) => `${DAYS[d.getDay()]} ${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+function stampWhen(stamp2, now) {
+  const m = STAMP.exec(stamp2);
+  if (!m) return null;
+  const [y, mo, d, h, mi, s] = m.slice(1, 7).map(Number);
+  const when = new Date(y, mo - 1, d, h, mi, s);
+  if (when.getFullYear() !== y || when.getMonth() !== mo - 1 || when.getDate() !== d) return null;
+  const day = `${MONTHS[mo - 1]} ${d}${y === now.getFullYear() ? "" : ` ${y}`}`;
+  const midnight = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((midnight(now) - midnight(when)) / 864e5);
+  const age = days <= 0 ? "today" : days === 1 ? "yesterday" : `${days} days ago`;
+  return { day, age, time: clock(when) };
 }
+function handoffLabel(stamp2, now) {
+  const when = stampWhen(stamp2, now);
+  return when ? `${when.day} handoff` : stamp2;
+}
+
+// src/cli/name.ts
+function handoffName(raw) {
+  const words = raw.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim().split(/\s+/).filter(Boolean).slice(0, 5);
+  return words.join("-").slice(0, 48).replace(/-+$/, "");
+}
+var NAME_LINE = /^[ \t]*(?:[-*][ \t]*)?(?:\*\*)?name(?:\*\*)?[ \t]*:(?:\*\*)?[ \t]*(.+)$/i;
+function takeName(note) {
+  const lines = note.split("\n");
+  const k = lines.slice(0, 5).findIndex((l) => NAME_LINE.test(l));
+  if (k < 0) return { name: "", rest: note };
+  const name = handoffName(lines[k].match(NAME_LINE)[1]);
+  return { name, rest: lines.filter((_, j) => j !== k).join("\n").trim() };
+}
+function nameInTitle(text) {
+  return text.match(/^# (\S+) · .* handoff · saved /m)?.[1];
+}
+
+// src/cli/write.ts
+import { homedir as homedir3 } from "node:os";
 
 // src/cli/limits.ts
 var ONE_READ_BYTES = 27e3;
@@ -1141,11 +1174,11 @@ function renderHandoff(i) {
 }
 function compose(i, level) {
   const { ex, redact } = i;
-  const top = [`# ${i.project} handoff \xB7 saved ${fullDate(i.savedAt)}`, `Transcript: ${i.transcript} (L123 means line 123 of it)`];
-  if (ex.copied) top.push(`This session continues ${ex.copied.from.slice(0, 8)}; its messages up to that session's save are in that handoff, not repeated here.`);
-  if (ex.ended) top.push(`The session ended ${ENDING[ex.ended.kind]} (L${ex.ended.line}): ${redact(ex.ended.text)}`);
-  if (ex.unplaced.length) top.push(`delulu could not place ${ex.unplaced.length} records (${ex.unplaced.map((l) => `L${l}`).join(", ")}); a message may be missing near them.`);
-  const parts = [top.join("\n"), section("Last agent's summary (not checked)", i.note?.trim() ? redact(i.note.trim()) : "No summary was written when this was saved.")];
+  const top = [`# ${i.name ? `${i.name} \xB7 ` : ""}${i.project} handoff \xB7 saved ${fullDay(i.savedAt)}`, `Transcript: ${i.transcript}`];
+  if (ex.copied) top.push("This chat was reopened from an earlier one. What came before that one was saved is in its own handoff, not repeated here.");
+  if (ex.ended) top.push(`The session ended ${ENDING[ex.ended.kind]}: ${redact(ex.ended.text)}`);
+  if (ex.unplaced.length) top.push(`delulu could not read ${ex.unplaced.length} entr${ex.unplaced.length === 1 ? "y" : "ies"} of the transcript (line${ex.unplaced.length === 1 ? "" : "s"} ${ex.unplaced.join(", ")}); a message may be missing there.`);
+  const parts = [top.join("\n"), section("Last agent's summary (not checked, so confirm anything it calls done, committed or pushed with git)", i.note?.trim() ? redact(i.note.trim()) : "No summary was written when this was saved.")];
   parts.push(section("Repo when saved", repoPart(i)));
   const last = lastExchange(ex, redact, level);
   if (last) parts.push(section("Last exchange", last));
@@ -1174,10 +1207,10 @@ function lastExchange(ex, redact, level) {
   const lines = [];
   if (reply) {
     const text = level >= 3 ? clipText(reply.text, 1500, redact) : redact(reply.text);
-    lines.push(`The agent's last reply (L${reply.line}):
-${text}${level >= 3 && text.endsWith("\u2026") ? ` (rest at L${reply.line})` : ""}`);
+    lines.push(`The agent's last reply:
+${text}${level >= 3 && text.endsWith("\u2026") ? ` (the rest is at line ${reply.line} of the transcript)` : ""}`);
   }
-  if (added) lines.push(`When saving, the user added (L${save}): ${redact(added)}`);
+  if (added) lines.push(`When saving, the user added: ${redact(added)}`);
   return lines.join("\n\n");
 }
 var RECENT_ANSWERS = 20;
@@ -1206,7 +1239,7 @@ function imageExt(mediaType) {
   const sub = (mediaType.toLowerCase().split("/")[1] ?? "").split("+")[0].replace(/[^a-z0-9]/g, "");
   return sub === "jpeg" ? "jpg" : sub || "img";
 }
-var KIND = { agent: "subagent", command: "background command", workflow: "workflow" };
+var KIND = { agent: "Subagent", command: "Background command", workflow: "Workflow" };
 var STATE = {
   finished: "finished",
   failed: "failed",
@@ -1243,7 +1276,7 @@ function helperLines(ex, redact, level) {
   const out = groups.map((tries) => {
     const h = tries[tries.length - 1];
     const earlier = tries.slice(0, -1);
-    let line = `- L${h.line} ${KIND[h.kind]} "${redact(h.what)}": ${STATE[h.ended]}`;
+    let line = `- ${KIND[h.kind]} "${redact(h.what)}": ${STATE[h.ended]}`;
     if (h.how && h.ended !== "finished" && h.ended !== "running") line += ` (${clip(h.how, 200)})`;
     if (earlier.length) line += ` (after ${earlier.length} ${earlier.every((e) => e.ended === "failed") ? "failed" : "earlier"} tr${earlier.length === 1 ? "y" : "ies"})`;
     const first = h.report ? firstRealLine(h.report) : "";
@@ -1252,37 +1285,44 @@ function helperLines(ex, redact, level) {
     if (h.files?.length) line += ` \xB7 changed: ${h.files.slice(0, 5).map(redact).join(", ")}${h.files.length > 5 ? ` (+${h.files.length - 5} more)` : ""}`;
     if (h.branch) line += ` \xB7 worked on branch \`${h.branch}\``;
     if (h.started?.length) line += ` \xB7 started: ${h.started.map(redact).join(", ")}`;
-    if (h.transcript) line += ` \xB7 ${h.ended === "finished" ? "full report" : "transcript"}: ${h.transcript}`;
+    if (h.transcript) line += ` \xB7 ${h.ended === "finished" ? "full report" : "transcript"}: ${h.transcript.replace(homedir3(), "~")}`;
     return line;
   });
   for (const s of ex.scheduled) out.push(`Still scheduled: ${redact(s.what)}`);
   return out.join("\n");
 }
+function imageFiles(ex) {
+  const files = /* @__PURE__ */ new Map();
+  let n = 0;
+  for (const t of ex.turns) {
+    if (t.kind === "said" && t.images?.length) files.set(t.line, t.images.map((im) => `image-${++n}.${imageExt(im.mediaType)}`));
+  }
+  return files;
+}
 var indent = (text) => text.split("\n").map((l, k) => k === 0 || !l ? l : `  ${l}`).join("\n");
 function messageLines(ex, redact, folder, level) {
   const out = [];
+  const images = imageFiles(ex);
   let shown = 0;
   for (const t of [...ex.turns].reverse()) {
-    const when = shortTime(t.at);
-    const head = `- L${t.line}${when ? ` \xB7 ${when}` : ""}`;
     if (t.kind === "said") {
       if (t.text.startsWith("/delulu:handoff")) continue;
-      const sent = t.how === "queued" ? ", sent while the agent worked" : "";
-      const body = t.pasted ? `pasted ${t.pasted.text.split("\n").length} lines from ${t.pasted.source} (see the transcript), then wrote: ${t.typed ?? ""}` : t.text;
-      const shots = (t.images ?? []).map((im, k) => ` \xB7 image: .delulu-handoff/${folder}/images/L${t.line}-${k + 1}.${imageExt(im.mediaType)}`).join("");
-      out.push(`${head}${sent}: ${indent(redact(body))}${t.maybeApp ? " (may be the app's retry button)" : ""}${shots}`);
+      const sent = t.how === "queued" ? "(sent while the agent worked) " : "";
+      const body = t.pasted ? `pasted ${t.pasted.text.split("\n").length} lines from ${t.pasted.source} (not copied here; it is at line ${t.line} of the transcript), then wrote: ${t.typed ?? ""}` : t.text;
+      const shots = (images.get(t.line) ?? []).map((f) => ` \xB7 image: .delulu-handoff/${folder}/images/${f}`).join("");
+      out.push(`- ${sent}${indent(redact(body))}${t.maybeApp ? " (may be the app's retry button)" : ""}${shots}`);
     } else if (t.kind === "asked") {
       for (const q of [...t.questions].reverse()) {
         const a = q.answer;
         const pick = a.outcome === "answered" && a.items.length === 1 && a.items[0].picked ? a.items[0].text : "";
         if (level >= 1 && shown++ >= RECENT_ANSWERS && pick) {
           const label = pick.replace(RECOMMENDED, "");
-          out.push(`${head} \xB7 asked "${clipText(q.question, 90, redact)}": ${label !== pick ? `took the agent's recommendation "${redact(label)}"` : `picked "${redact(label)}"`}`);
-        } else out.push(`${head} \xB7 asked "${redact(q.question)}": ${indent(answerText(q, redact))}`);
+          out.push(`- Asked "${clipText(q.question, 90, redact)}": ${label !== pick ? `took the agent's recommendation "${redact(label)}"` : `picked "${redact(label)}"`}`);
+        } else out.push(`- Asked "${redact(q.question)}": ${indent(answerText(q, redact))}`);
       }
-    } else if (t.kind === "stopped") out.push(`${head} \xB7 ${t.appClosed ? "the app closed while the agent was working" : "stopped the agent"}`);
-    else if (t.kind === "refused") out.push(`${head} \xB7 turned down ${t.tool}: ${redact(t.what)}`);
-    else out.push(`${head} \xB7 another session (${t.from}) sent this, not the user: ${indent(redact(t.text))}`);
+    } else if (t.kind === "stopped") out.push(`- ${t.appClosed ? "The app closed while the agent was working" : "Stopped the agent"}`);
+    else if (t.kind === "refused") out.push(`- Turned down ${t.tool}: ${redact(t.what)}`);
+    else out.push(`- Another session ("${t.from}") sent this, not the user: ${indent(redact(t.text))}`);
   }
   return out.join("\n");
 }
@@ -1318,8 +1358,8 @@ function fail(message) {
 }
 function main() {
   const argv = process.argv.slice(2);
-  const flag = (name) => {
-    const k = argv.lastIndexOf(name);
+  const flag = (name2) => {
+    const k = argv.lastIndexOf(name2);
     return k >= 0 ? argv[k + 1] : void 0;
   };
   const where = flag("--repo") ?? process.cwd();
@@ -1364,8 +1404,8 @@ function main() {
   const dirty = uncommitted(repo);
   const since = ex.startedAt ? git(repo, ["log", `--since=${ex.startedAt}`, "--format=%h%x09%s", "-n", "30"]) : void 0;
   const commits = (since ?? "").split("\n").filter(Boolean).map((l) => {
-    const [sha, ...rest] = l.split("	");
-    return { sha, subject: rest.join("	") };
+    const [sha, ...rest2] = l.split("	");
+    return { sha, subject: rest2.join("	") };
   });
   mkdirSync(base, { recursive: true, mode: 448 });
   chmodSync(base, 448);
@@ -1380,28 +1420,42 @@ function main() {
       folder = `${stamp(now)}-${n}`;
     }
   }
+  const { name: chosenName, rest } = takeName(note);
+  const cleaned = handoffName(redact(chosenName));
+  const name = cleaned ? uniqueName(cleaned, base, folder) : "";
   const out = renderHandoff({
     project: basename3(repo),
+    name: name || void 0,
     savedAt: now,
-    transcript: log.replace(homedir3(), "~"),
+    transcript: log.replace(homedir4(), "~"),
     folder,
     ex,
-    note: note || void 0,
+    note: rest || void 0,
     redact,
     repo: { branch, commit, uncommitted: dirty, commits }
   });
   writeFileSync2(join5(base, folder, "handoff.md"), out, { mode: 384 });
   const missed = writeImages(join5(base, folder), ex);
   if (note) rmSync(notePath, { force: true });
-  const lines = [`delulu saved this session: .delulu-handoff/${folder}/handoff.md (about ${(Buffer.byteLength(out) / 2500).toFixed(1)}k tokens)`];
-  if (!note) lines.push(`No summary was written, so the next session gets the session without one, and no older handoff was removed. Write ${notePath.replace(`${repo}/`, "")} and save again to add it.`);
+  const lines = [`delulu saved this session: ${name || handoffLabel(folder, now)}`];
+  if (!rest) lines.push(`No summary was written, so the next session gets the session without one, and no older handoff was removed. Write ${notePath.replace(`${repo}/`, "")} and save again to add it.`);
   if (ignored) lines.push(ignored);
   if (missed) lines.push(`${missed} image(s) could not be saved.`);
-  const pruned = note ? prune(base, folder) : "";
-  if (pruned) lines.push(pruned);
-  lines.push("In a fresh session, type /delulu:resume to carry on.");
+  if (rest) prune(base, folder);
   process.stdout.write(`${lines.join("\n")}
 `);
+}
+function uniqueName(name, base, self) {
+  const taken = new Set(handoffFolders(base).filter((f) => f !== self).map((f) => {
+    try {
+      return nameInTitle(readFileSync4(join5(base, f, "handoff.md"), "utf8").slice(0, 500));
+    } catch {
+      return void 0;
+    }
+  }));
+  let n = 1;
+  while (taken.has(n === 1 ? name : `${name}-${n}`)) n++;
+  return n === 1 ? name : `${name}-${n}`;
 }
 function prune(base, keep) {
   const older = handoffFolders(base).filter((f) => f !== keep);
@@ -1412,16 +1466,16 @@ function prune(base, keep) {
     } catch {
     }
   }
-  return gone.length ? `Removed ${gone.length} old handoff(s), keeping the newest ${KEEP}.` : "";
 }
 function writeImages(folder, ex) {
   let missed = 0;
+  const names = imageFiles(ex);
   for (const t of ex.turns) {
     if (t.kind !== "said" || !t.images?.length) continue;
     t.images.forEach((im, k) => {
       try {
         mkdirSync(join5(folder, "images"), { recursive: true, mode: 448 });
-        writeFileSync2(join5(folder, "images", `L${t.line}-${k + 1}.${imageExt(im.mediaType)}`), Buffer.from(im.data, "base64"), { mode: 384 });
+        writeFileSync2(join5(folder, "images", names.get(t.line)?.[k] ?? `image-${t.line}-${k + 1}`), Buffer.from(im.data, "base64"), { mode: 384 });
       } catch {
         missed++;
       }

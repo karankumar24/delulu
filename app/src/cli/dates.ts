@@ -10,14 +10,8 @@ export const clock = (d: Date): string => `${d.getHours() % 12 || 12}:${String(d
 /** `Thu Sep 11 at 6:30 PM` */
 export const clockNow = (d: Date): string => `${DAYS[d.getDay()]} ${MONTHS[d.getMonth()]} ${d.getDate()} at ${clock(d)}`;
 
-/** `Tue Sep 15, 2026 at 12:22 AM` */
-export const fullDate = (d: Date): string => `${DAYS[d.getDay()]} ${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} at ${clock(d)}`;
-
-/** `Sep 15, 4:24 PM`, or nothing when the timestamp is missing or unreadable. */
-export function shortTime(iso?: string): string {
-  const d = iso ? new Date(iso) : undefined;
-  return d && !Number.isNaN(d.getTime()) ? `${MONTHS[d.getMonth()]} ${d.getDate()}, ${clock(d)}` : '';
-}
+/** `Tue Sep 15, 2026`: the day only. The time of the save is printed once, by resume. */
+export const fullDay = (d: Date): string => `${DAYS[d.getDay()]} ${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 
 export interface StampWhen { day: string; age: string; time: string }
 

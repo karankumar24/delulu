@@ -11,7 +11,9 @@ import { extractSession } from './extract';
 import type { Extraction } from './extract';
 import { makeRedactor } from './redact';
 import { resolveLog } from './resolve-log';
-import { imageExt, renderHandoff } from './write';
+import { handoffLabel } from './dates';
+import { handoffName, nameInTitle, takeName } from './name';
+import { imageFiles, renderHandoff } from './write';
 
 const KEEP = 15;
 const STAMPED = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(?:-\d+)?$/;
@@ -92,40 +94,51 @@ function main(): void {
       folder = `${stamp(now)}-${n}`;
     }
   }
-  const out = renderHandoff({ project: basename(repo), savedAt: now, transcript: log.replace(homedir(), '~'), folder, ex,
-    note: note || undefined, redact, repo: { branch, commit, uncommitted: dirty, commits } });
+  const { name: chosenName, rest } = takeName(note);
+  const cleaned = handoffName(redact(chosenName));
+  const name = cleaned ? uniqueName(cleaned, base, folder) : '';
+  const out = renderHandoff({ project: basename(repo), name: name || undefined, savedAt: now, transcript: log.replace(homedir(), '~'), folder, ex,
+    note: rest || undefined, redact, repo: { branch, commit, uncommitted: dirty, commits } });
   writeFileSync(join(base, folder, 'handoff.md'), out, { mode: 0o600 });
   const missed = writeImages(join(base, folder), ex);
   if (note) rmSync(notePath, { force: true });
 
-  const lines = [`delulu saved this session: .delulu-handoff/${folder}/handoff.md (about ${(Buffer.byteLength(out) / 2500).toFixed(1)}k tokens)`];
-  if (!note) lines.push(`No summary was written, so the next session gets the session without one, and no older handoff was removed. Write ${notePath.replace(`${repo}/`, '')} and save again to add it.`);
+  const lines = [`delulu saved this session: ${name || handoffLabel(folder, now)}`];
+  if (!rest) lines.push(`No summary was written, so the next session gets the session without one, and no older handoff was removed. Write ${notePath.replace(`${repo}/`, '')} and save again to add it.`);
   if (ignored) lines.push(ignored);
   if (missed) lines.push(`${missed} image(s) could not be saved.`);
   // A handoff without a summary is a weaker one; it never pushes out a complete one.
-  const pruned = note ? prune(base, folder) : '';
-  if (pruned) lines.push(pruned);
-  lines.push('In a fresh session, type /delulu:resume to carry on.');
+  if (rest) prune(base, folder);
   process.stdout.write(`${lines.join('\n')}\n`);
 }
 
+/** The name, or the name with -2, -3 and so on when another handoff here already has it. */
+function uniqueName(name: string, base: string, self: string): string {
+  const taken = new Set(handoffFolders(base).filter((f) => f !== self).map((f) => {
+    try { return nameInTitle(readFileSync(join(base, f, 'handoff.md'), 'utf8').slice(0, 500)); } catch { return undefined; }
+  }));
+  let n = 1;
+  while (taken.has(n === 1 ? name : `${name}-${n}`)) n++;
+  return n === 1 ? name : `${name}-${n}`;
+}
+
 /** Keeps the newest handoffs. */
-function prune(base: string, keep: string): string {
+function prune(base: string, keep: string): void {
   const older = handoffFolders(base).filter((f) => f !== keep);
   const gone = older.slice(0, Math.max(0, older.length - (KEEP - 1)));
   for (const f of gone) { try { rmSync(join(base, f), { recursive: true, force: true }); } catch { /* housekeeping only */ } }
-  return gone.length ? `Removed ${gone.length} old handoff(s), keeping the newest ${KEEP}.` : '';
 }
 
 /** Saves the images the user sent beside the handoff, under the names the handoff points to. */
 function writeImages(folder: string, ex: Extraction): number {
   let missed = 0;
+  const names = imageFiles(ex);
   for (const t of ex.turns) {
     if (t.kind !== 'said' || !t.images?.length) continue;
     t.images.forEach((im, k) => {
       try {
         mkdirSync(join(folder, 'images'), { recursive: true, mode: 0o700 });
-        writeFileSync(join(folder, 'images', `L${t.line}-${k + 1}.${imageExt(im.mediaType)}`), Buffer.from(im.data, 'base64'), { mode: 0o600 });
+        writeFileSync(join(folder, 'images', names.get(t.line)?.[k] ?? `image-${t.line}-${k + 1}`), Buffer.from(im.data, 'base64'), { mode: 0o600 });
       } catch { missed++; }
     });
   }

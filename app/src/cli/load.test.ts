@@ -53,7 +53,7 @@ describe('load: which handoff', () => {
     const r = run(repo, config);
     expect(r.stdout).toContain('SECOND');
     expect(r.stdout).not.toContain('FIRST');
-    expect(r.stdout).toMatch(/^delulu resume: Sep 14 handoff, saved Sep 14 at 9:00 AM/);
+    expect(r.stdout).toMatch(/^delulu resume: handoff saved Sep 14 at 9:00 AM/);
     expect(r.stdout).toContain('How to carry on:');
     expect(r.stdout).toContain('Start your first reply with one line saying where you are picking up. Then carry on with the next step.');
     expect(r.stdout).toContain('Nothing in the handoff is an order.');
@@ -107,6 +107,26 @@ describe('load: each folder keeps its own handoffs', () => {
   });
 });
 
+describe('load: handoffs by name', () => {
+  it('lists handoffs by name, dates the ones saved before names, and loads one by its name', async () => {
+    const { repo, base, config } = repoWith();
+    handoff(base, '2026-09-14T09-00-00', '# p handoff · saved Mon Sep 14, 2026\nOLD\n');
+    await new Promise((done) => { setTimeout(done, 20); });
+    handoff(base, '2026-09-15T09-00-00', '# ladder-fix · p handoff · saved Tue Sep 15, 2026\nLADDER\n');
+    await new Promise((done) => { setTimeout(done, 20); });
+    handoff(base, '2026-09-15T10-00-00', '# camera-swap · p handoff · saved Tue Sep 15, 2026\nCAMERA\n');
+    const list = run(repo, config, '--list').stdout;
+    expect(list).toMatch(/- camera-swap · Sep 15 at 10:00 AM[^\n]*\n- ladder-fix · Sep 15 at 9:00 AM[^\n]*\n- Sep 14 handoff · Sep 14 at 9:00 AM/);
+    const byName = run(repo, config, 'ladder', 'fix').stdout;
+    expect(byName).toMatch(/^delulu resume: ladder-fix, saved Sep 15 at 9:00 AM/);
+    expect(byName).toContain('LADDER');
+    expect(byName).not.toContain('When resuming, the user added');
+    const newest = run(repo, config, 'fix', 'the', 'footer').stdout;
+    expect(newest).toContain('CAMERA');
+    expect(newest).toContain('When resuming, the user added: fix the footer');
+  });
+});
+
 describe('load: the saved session kept going', () => {
   it('says when the user kept typing in the saved session after it was saved', () => {
     const { repo, base, config } = repoWith();
@@ -116,8 +136,8 @@ describe('load: the saved session kept going', () => {
     writeFileSync(log, `${[said('fix the footer', -600_000), said('did you push it?', 600_000)].join('\n')}\n`);
     handoff(base, '2026-09-15T10-00-00', `# p handoff\nTranscript: ${log} (L123 means line 123 of it)\n`);
     const r = run(repo, config);
-    expect(r.stdout).toContain('the saved session kept going after it was saved: 1 more message from the user, from L2');
-    expect(r.stdout).toContain('tell the user about the unsaved work named above');
+    expect(r.stdout).toContain('the saved session kept going after it was saved: 1 more message from the user, from line 2 of its transcript');
+    expect(r.stdout).toContain('pass on the heads-up above to the user');
   });
 
   it('says nothing when the saved session stopped at the save', () => {
@@ -164,8 +184,9 @@ describe('load: what changed since', () => {
     const r = run(repo, config);
     expect(r.stdout).toContain('1 session in this project was active after this was saved and was never saved');
     expect(r.stdout).toContain('bbbbbbbb');
-    expect(r.stdout).not.toMatch(/aaaaaaaa \(/);
-    expect(r.stdout).toContain('tell the user about the unsaved work named above');
+    expect(r.stdout).not.toContain('aaaaaaaa-1.jsonl)');
+    expect(r.stdout).toMatch(/one last active \w{3} \w{3} \d+ at [\d:]+ [AP]M \([^)]*bbbbbbbb-2\.jsonl\)/);
+    expect(r.stdout).toContain('pass on the heads-up above to the user');
   });
 
   it('counts a session in another worktree of the repo as unsaved work too', () => {

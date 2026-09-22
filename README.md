@@ -8,9 +8,9 @@ Here is [what a handoff looks like](docs/example-handoff.md).
 
 ## Two commands
 
-**`/delulu:handoff`** at the end of a session. The agent writes a short note: where things stand, what it found, what was decided, the next step, and what not to do. delulu adds what it can read for itself from the transcript and the repo, and saves one file.
+**`/delulu:handoff`** at the end of a session. The agent names the session in a few words and writes a short note: where things stand, what it found, what was decided, the next step, and what not to do. delulu adds what it can read for itself from the transcript and the repo, and saves one file under that name.
 
-**`/delulu:resume`** in a fresh session. It loads the newest handoff, says what changed in the repo since it was saved, and tells the agent how to carry on. The agent opens with one line on where it is picking up, and tells you about any work after the save that no handoff holds. Add a few words after the command to load an older handoff by its date, or to say what you want to do first. `/delulu:resume --list` shows the handoffs you have.
+**`/delulu:resume`** in a fresh session. It loads the newest handoff, says what changed in the repo since it was saved, and tells the agent how to carry on. The agent opens with one line on where it is picking up, and tells you about any work after the save that no handoff holds. Add a handoff's name after the command to load that one instead, or a few words to say what you want to do first. `/delulu:resume --list` shows the handoffs you have, by name.
 
 Neither command asks you anything. Nothing runs in the background, and nothing is registered to fire on its own: delulu does nothing until you type one of the two.
 
@@ -24,7 +24,7 @@ Neither command asks you anything. Nothing runs in the background, and nothing i
 
 A handoff is about the one session it saves. Nothing is copied into it from older handoffs.
 
-A handoff aims to fit in one read. When a session is long, the least useful detail is shortened first; your own words never are. Line numbers point back into the transcript, so the next agent can read further when it needs to.
+A handoff aims to fit in one read. When a session is long, the least useful detail is shortened first; your own words never are. Your words are copied exactly, so the next agent can find them in the transcript when it needs to read further.
 
 ## What it reads, and where it goes
 
