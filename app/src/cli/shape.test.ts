@@ -57,7 +57,8 @@ describe('every file in the repo stays plain text', () => {
   // A control character makes grep read the file as binary, so a search for a line inside it comes
   // back empty and the line looks like it does not exist. Two NUL bytes did exactly that here.
   const CONTROL = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/;
-  const tracked = execFileSync('git', ['-C', REPO, 'ls-files'], { encoding: 'utf8' }).split('\n').filter(Boolean);
+  // Images are binary by nature; the rule is for text.
+  const tracked = execFileSync('git', ['-C', REPO, 'ls-files'], { encoding: 'utf8' }).split('\n').filter((f) => f && !/\.(?:png|jpe?g|gif|webp)$/i.test(f));
 
   it('finds the tracked files at all', () => {
     expect(tracked.length).toBeGreaterThan(20);
