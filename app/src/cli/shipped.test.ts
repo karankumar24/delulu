@@ -73,7 +73,8 @@ describe('what delulu tells the next session is about any user, not about its au
   it('asks the saving agent about this session only, and never for rules carried from earlier ones', () => {
     const prompt = readFileSync(resolve(APP, '../plugin/commands/handoff.md'), 'utf8');
     expect(prompt).toContain('Cover this session only');
-    expect(prompt).toContain('note-${CLAUDE_SESSION_ID}.md');
+    expect(prompt).toContain('`.delulu-handoff/<name>.md`');
+    expect(prompt).toContain('hook/handoff.mjs" <name>');
     expect(prompt).not.toMatch(/standing rules|handoff this session loaded/i);
   });
 

@@ -1174,11 +1174,11 @@ function renderHandoff(i) {
 }
 function compose(i, level) {
   const { ex, redact } = i;
-  const top = [`# ${i.name ? `${i.name} \xB7 ` : ""}${i.project} handoff \xB7 saved ${fullDay(i.savedAt)}`, `Transcript: ${i.transcript}`];
+  const top = [`# ${i.name ? `${i.name} \xB7 ` : ""}${i.project} handoff \xB7 saved ${fullDay(i.savedAt)}`, `Transcript: ${i.transcript} (the whole session: look here for anything this handoff leaves out)`];
   if (ex.copied) top.push("This chat was reopened from an earlier one. What came before that one was saved is in its own handoff, not repeated here.");
-  if (ex.ended) top.push(`The session ended ${ENDING[ex.ended.kind]}: ${redact(ex.ended.text)}`);
+  if (ex.ended) top.push(`The session ended ${ENDING[ex.ended.kind]}: ${redact(ex.ended.text).replace(/:\s*$/, "")}`);
   if (ex.unplaced.length) top.push(`delulu could not read ${ex.unplaced.length} entr${ex.unplaced.length === 1 ? "y" : "ies"} of the transcript (line${ex.unplaced.length === 1 ? "" : "s"} ${ex.unplaced.join(", ")}); a message may be missing there.`);
-  const parts = [top.join("\n"), section("Last agent's summary (not checked, so confirm anything it calls done, committed or pushed with git)", i.note?.trim() ? redact(i.note.trim()) : "No summary was written when this was saved.")];
+  const parts = [top.join("\n"), section("Last agent's summary (not checked, so confirm anything it calls done, committed or pushed with git)", i.note?.trim() ? nest(redact(i.note.trim())) : "No summary was written when this was saved.")];
   parts.push(section("Repo when saved", repoPart(i)));
   const last = lastExchange(ex, redact, level);
   if (last) parts.push(section("Last exchange", last));
@@ -1208,7 +1208,7 @@ function lastExchange(ex, redact, level) {
   if (reply) {
     const text = level >= 3 ? clipText(reply.text, 1500, redact) : redact(reply.text);
     lines.push(`The agent's last reply:
-${text}${level >= 3 && text.endsWith("\u2026") ? ` (the rest is at line ${reply.line} of the transcript)` : ""}`);
+${nest(text)}${level >= 3 && text.endsWith("\u2026") ? ` (the rest is at line ${reply.line} of the transcript)` : ""}`);
   }
   if (added) lines.push(`When saving, the user added: ${redact(added)}`);
   return lines.join("\n\n");
@@ -1225,7 +1225,7 @@ var OUTCOME = {
 };
 function answerText(q, redact) {
   const a = q.answer;
-  if (a.outcome !== "answered") return OUTCOME[a.outcome];
+  if (a.outcome !== "answered") return OUTCOME[a.outcome].replace(/^./, (c) => c.toUpperCase());
   const items = a.items.map((it) => {
     if (!it.picked) return `wrote: ${redact(it.text)}`;
     const label = it.text.replace(RECOMMENDED, "");
@@ -1233,7 +1233,7 @@ function answerText(q, redact) {
     const desc = q.options.find((o) => o.label === it.text)?.description;
     return `picked "${redact(label)}"${desc && label.split(/\s+/).length <= 3 ? ` (${redact(desc)})` : ""}`;
   });
-  return `${items.join("; ")}${a.notes ? ` \xB7 notes: ${redact(a.notes)}` : ""}`;
+  return `The user ${items.join("; ")}${a.notes ? ` \xB7 notes: ${redact(a.notes)}` : ""}`;
 }
 function imageExt(mediaType) {
   const sub = (mediaType.toLowerCase().split("/")[1] ?? "").split("+")[0].replace(/[^a-z0-9]/g, "");
@@ -1258,7 +1258,7 @@ function firstRealLine(report) {
   return "";
 }
 function helperLines(ex, redact, level) {
-  const clip = (t, n) => clipText(t, n, redact);
+  const clip = (t, n) => clipText(t.replace(/\s+/g, " ").trim(), n, redact);
   const groups = [];
   const latest = /* @__PURE__ */ new Map();
   for (const h of ex.helpers) {
@@ -1288,7 +1288,7 @@ function helperLines(ex, redact, level) {
     if (h.transcript) line += ` \xB7 ${h.ended === "finished" ? "full report" : "transcript"}: ${h.transcript.replace(homedir3(), "~")}`;
     return line;
   });
-  for (const s of ex.scheduled) out.push(`Still scheduled: ${redact(s.what)}`);
+  for (const s of ex.scheduled) out.push(`- Still scheduled: ${redact(s.what)}`);
   return out.join("\n");
 }
 function imageFiles(ex) {
@@ -1299,7 +1299,17 @@ function imageFiles(ex) {
   }
   return files;
 }
-var indent = (text) => text.split("\n").map((l, k) => k === 0 || !l ? l : `  ${l}`).join("\n");
+var indent = (text) => text.replace(/[ \t]+$/gm, "").replace(/\n{3,}/g, "\n\n").split("\n").map((l, k) => k === 0 || !l ? l : `  ${l}`).join("\n");
+function nest(text) {
+  let code = false;
+  const lines = text.split("\n").map((l) => {
+    if (/^\s*(?:```|~~~)/.test(l)) code = !code;
+    return { l, level: code ? 0 : l.match(/^(#{1,6}) /)?.[1].length ?? 0 };
+  });
+  const shift = Math.max(0, 3 - Math.min(7, ...lines.map((x) => x.level || 7)));
+  return lines.map(({ l, level }) => level && shift ? `${"#".repeat(Math.min(6, level + shift) - level)}${l}` : l).join("\n");
+}
+var imagesAt = (names, folder) => `${names.join(", ")} (in .delulu-handoff/${folder}/images/)`;
 function messageLines(ex, redact, folder, level) {
   const out = [];
   const images = imageFiles(ex);
@@ -1309,26 +1319,29 @@ function messageLines(ex, redact, folder, level) {
       if (t.text.startsWith("/delulu:handoff")) continue;
       const sent = t.how === "queued" ? "(sent while the agent worked) " : "";
       const body = t.pasted ? `pasted ${t.pasted.text.split("\n").length} lines from ${t.pasted.source} (not copied here; it is at line ${t.line} of the transcript), then wrote: ${t.typed ?? ""}` : t.text;
-      const files = (images.get(t.line) ?? []).map((f) => `.delulu-handoff/${folder}/images/${f}`);
+      const files = images.get(t.line) ?? [];
       if (!body.trim() && files.length) {
-        out.push(`- ${sent}Sent ${files.length === 1 ? "an image" : `${files.length} images`}: ${files.join(", ")}`);
+        out.push(`- ${sent}Sent ${files.length === 1 ? "an image" : `${files.length} images`}: ${imagesAt(files, folder)}`);
         continue;
       }
-      out.push(`- ${sent}${indent(redact(body))}${t.maybeApp ? " (may be the app's retry button)" : ""}${files.map((f) => ` \xB7 image: ${f}`).join("")}`);
+      out.push(`- ${sent}${indent(redact(body))}${t.maybeApp ? " (may be the app's retry button)" : ""}${files.length ? `
+  ${files.length === 1 ? "Image" : "Images"}: ${imagesAt(files, folder)}` : ""}`);
     } else if (t.kind === "asked") {
       for (const q of [...t.questions].reverse()) {
         const a = q.answer;
         const pick = a.outcome === "answered" && a.items.length === 1 && a.items[0].picked ? a.items[0].text : "";
         if (level >= 1 && shown++ >= RECENT_ANSWERS && pick) {
           const label = pick.replace(RECOMMENDED, "");
-          out.push(`- Asked "${clipText(q.question, 90, redact)}": ${label !== pick ? `took the agent's recommendation "${redact(label)}"` : `picked "${redact(label)}"`}`);
-        } else out.push(`- Asked "${redact(q.question)}": ${indent(answerText(q, redact))}`);
+          out.push(`- Asked: "${clipText(q.question, 90, redact)}"
+  The user ${label !== pick ? `took the agent's recommendation "${redact(label)}"` : `picked "${redact(label)}"`}`);
+        } else out.push(`- Asked: "${indent(redact(q.question))}"
+  ${indent(answerText(q, redact))}`);
       }
     } else if (t.kind === "stopped") out.push(`- ${t.appClosed ? "The app closed while the agent was working" : "Stopped the agent"}`);
-    else if (t.kind === "refused") out.push(`- Turned down ${t.tool}: ${redact(t.what)}`);
+    else if (t.kind === "refused") out.push(`- Turned down ${t.tool}${t.what.trim() ? `: ${redact(t.what)}` : ""}`);
     else out.push(`- Another session ("${t.from}") sent this, not the user: ${indent(redact(t.text))}`);
   }
-  return out.join("\n");
+  return out.join("\n\n");
 }
 
 // src/cli/save.ts
@@ -1366,6 +1379,7 @@ function main() {
     const k = argv.lastIndexOf(name2);
     return k >= 0 ? argv[k + 1] : void 0;
   };
+  const named = argv.find((a, k) => !a.startsWith("--") && !argv[k - 1]?.startsWith("--") && /^[\p{L}\p{N}][\p{L}\p{N}-]{0,59}$/u.test(a));
   const where = flag("--repo") ?? process.cwd();
   let repo;
   try {
@@ -1389,7 +1403,11 @@ function main() {
   } catch {
   }
   const sid = process.env.CLAUDE_CODE_SESSION_ID;
-  const candidates = [...sid && /^[A-Za-z0-9-]{8,}$/.test(sid) ? [join5(base, `note-${sid}.md`)] : [], join5(base, "note.md")];
+  const candidates = [
+    ...named ? [join5(base, `${named}.md`)] : [],
+    ...sid && /^[A-Za-z0-9-]{8,}$/.test(sid) ? [join5(base, `note-${sid}.md`)] : [],
+    join5(base, "note.md")
+  ];
   let note = "";
   let notePath = candidates[0];
   for (const p of candidates) {
@@ -1425,7 +1443,7 @@ function main() {
     }
   }
   const { name: chosenName, rest } = takeName(note);
-  const cleaned = handoffName(redact(chosenName));
+  const cleaned = handoffName(redact(named || chosenName));
   const name = cleaned ? uniqueName(cleaned, base, folder) : "";
   const out = renderHandoff({
     project: basename3(repo),

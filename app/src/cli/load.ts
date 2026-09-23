@@ -57,7 +57,7 @@ function main(): void {
   // A note left by a save that never ran: kept out of git, and named, since it is the only record of that session.
   let left = '';
   try {
-    const notes = readdirSync(base).filter((f) => /^note(?:-[A-Za-z0-9-]+)?\.md$/.test(f));
+    const notes = readdirSync(base).filter((f) => f.endsWith('.md'));
     if (notes.length) {
       const ignored = keepOutOfGit(repo);
       left = `A save that never finished left ${notes.length === 1 ? 'a note' : `${notes.length} notes`}: ${notes.map((f) => join(base, f).replace(homedir(), '~')).join(', ')}.${ignored ? ` ${ignored}` : ''}`;

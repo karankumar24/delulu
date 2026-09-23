@@ -95,6 +95,31 @@ describe('save', () => {
     expect(readFileSync(join(base, 'note-bbbbbbbb-2.md'), 'utf8')).toBe('The other window.\n');
   });
 
+  it('reads the summary file named after the session, and names the handoff with it', () => {
+    const { repo, log, base } = setup([user('fix the footer')]);
+    mkdirSync(base);
+    writeFileSync(join(base, 'footer-fix.md'), 'Mine.\n');
+    writeFileSync(join(base, 'other-window.md'), 'The other window.\n');
+    const r = spawnSync('node', [SAVE, 'footer-fix', '--repo', repo, '--log', log], { encoding: 'utf8', env });
+    expect(r.stdout).toMatch(/^delulu saved this session: footer-fix$/m);
+    const out = readFileSync(join(base, folders(base)[0], 'handoff.md'), 'utf8');
+    expect(out.split('\n')[0]).toMatch(/^# footer-fix · /);
+    expect(out).toContain('Mine.');
+    expect(out).not.toContain('The other window.');
+    expect(existsSync(join(base, 'footer-fix.md'))).toBe(false);
+    expect(readFileSync(join(base, 'other-window.md'), 'utf8')).toBe('The other window.\n');
+  });
+
+  it('never reads a file outside the handoff folder, whatever name it is given', () => {
+    const { repo, log, base } = setup([user('go')]);
+    mkdirSync(base);
+    writeFileSync(join(repo, 'secret.md'), 'Not a summary.\n');
+    const r = spawnSync('node', [SAVE, '../secret', '--repo', repo, '--log', log], { encoding: 'utf8', env });
+    expect(r.stdout).toContain('No summary was written');
+    expect(readFileSync(join(base, folders(base)[0], 'handoff.md'), 'utf8')).not.toContain('Not a summary.');
+    expect(existsSync(join(repo, 'secret.md'))).toBe(true);
+  });
+
   it("falls back to a plain note.md when this session's own note is missing", () => {
     const { repo, log, base } = setup([user('go')]);
     mkdirSync(base);

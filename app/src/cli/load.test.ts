@@ -237,6 +237,8 @@ describe('load: what changed since', () => {
     const r = run(repo, config);
     expect(r.stdout).toContain('A save that never finished left a note');
     expect(r.stdout).toContain('note-cccccccc-3.md');
+    writeFileSync(join(base, 'footer-fix.md'), 'unsaved summary');
+    expect(run(repo, config).stdout).toContain('left 2 notes');
     expect(readFileSync(join(repo, '.gitignore'), 'utf8')).toContain('.delulu-handoff/');
   });
 

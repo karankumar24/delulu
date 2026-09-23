@@ -43,12 +43,12 @@ export function renderHandoff(i: HandoffInput): string {
 /** Level 1: older picks keep their question only in short. 2: report excerpts go. 3: a long last reply is cut. */
 function compose(i: HandoffInput, level: number): string {
   const { ex, redact } = i;
-  const top = [`# ${i.name ? `${i.name} · ` : ''}${i.project} handoff · saved ${fullDay(i.savedAt)}`, `Transcript: ${i.transcript}`];
+  const top = [`# ${i.name ? `${i.name} · ` : ''}${i.project} handoff · saved ${fullDay(i.savedAt)}`, `Transcript: ${i.transcript} (the whole session: look here for anything this handoff leaves out)`];
   if (ex.copied) top.push('This chat was reopened from an earlier one. What came before that one was saved is in its own handoff, not repeated here.');
-  if (ex.ended) top.push(`The session ended ${ENDING[ex.ended.kind]}: ${redact(ex.ended.text)}`);
+  if (ex.ended) top.push(`The session ended ${ENDING[ex.ended.kind]}: ${redact(ex.ended.text).replace(/:\s*$/, '')}`);
   if (ex.unplaced.length) top.push(`delulu could not read ${ex.unplaced.length} entr${ex.unplaced.length === 1 ? 'y' : 'ies'} of the transcript (line${ex.unplaced.length === 1 ? '' : 's'} ${ex.unplaced.join(', ')}); a message may be missing there.`);
 
-  const parts = [top.join('\n'), section("Last agent's summary (not checked, so confirm anything it calls done, committed or pushed with git)", i.note?.trim() ? redact(i.note.trim()) : 'No summary was written when this was saved.')];
+  const parts = [top.join('\n'), section("Last agent's summary (not checked, so confirm anything it calls done, committed or pushed with git)", i.note?.trim() ? nest(redact(i.note.trim())) : 'No summary was written when this was saved.')];
   parts.push(section('Repo when saved', repoPart(i)));
   const last = lastExchange(ex, redact, level);
   if (last) parts.push(section('Last exchange', last));
@@ -83,7 +83,7 @@ function lastExchange(ex: Extraction, redact: (t: string) => string, level: numb
   const lines: string[] = [];
   if (reply) {
     const text = level >= 3 ? clipText(reply.text, 1500, redact) : redact(reply.text);
-    lines.push(`The agent's last reply:\n${text}${level >= 3 && text.endsWith('…') ? ` (the rest is at line ${reply.line} of the transcript)` : ''}`);
+    lines.push(`The agent's last reply:\n${nest(text)}${level >= 3 && text.endsWith('…') ? ` (the rest is at line ${reply.line} of the transcript)` : ''}`);
   }
   if (added) lines.push(`When saving, the user added: ${redact(added)}`);
   return lines.join('\n\n');
@@ -99,7 +99,7 @@ const OUTCOME: Record<Exclude<Question['answer']['outcome'], 'answered'>, string
 /** A pick keeps its option's meaning only when the label is too short to carry it (3 words or fewer). */
 function answerText(q: Question, redact: (t: string) => string): string {
   const a = q.answer;
-  if (a.outcome !== 'answered') return OUTCOME[a.outcome];
+  if (a.outcome !== 'answered') return OUTCOME[a.outcome].replace(/^./, (c) => c.toUpperCase());
   const items = a.items.map((it) => {
     if (!it.picked) return `wrote: ${redact(it.text)}`;
     const label = it.text.replace(RECOMMENDED, '');
@@ -107,7 +107,7 @@ function answerText(q: Question, redact: (t: string) => string): string {
     const desc = q.options.find((o) => o.label === it.text)?.description;
     return `picked "${redact(label)}"${desc && label.split(/\s+/).length <= 3 ? ` (${redact(desc)})` : ''}`;
   });
-  return `${items.join('; ')}${a.notes ? ` · notes: ${redact(a.notes)}` : ''}`;
+  return `The user ${items.join('; ')}${a.notes ? ` · notes: ${redact(a.notes)}` : ''}`;
 }
 
 function imageExt(mediaType: string): string {
@@ -135,7 +135,8 @@ function firstRealLine(report: string): string {
 /** One line per helper, retries of the same one folded into their final outcome. A same-named helper
  * that finished or is still running is its own line, not a retry: its report or state still matters. */
 function helperLines(ex: Extraction, redact: (t: string) => string, level: number): string {
-  const clip = (t: string, n: number) => clipText(t, n, redact);
+  // One line per helper: its own words can run over several lines, and a heading in them would read as a section.
+  const clip = (t: string, n: number) => clipText(t.replace(/\s+/g, ' ').trim(), n, redact);
   const groups: Helper[][] = [];
   const latest = new Map<string, Helper[]>();
   for (const h of ex.helpers) {
@@ -162,7 +163,7 @@ function helperLines(ex: Extraction, redact: (t: string) => string, level: numbe
     if (h.transcript) line += ` · ${h.ended === 'finished' ? 'full report' : 'transcript'}: ${h.transcript.replace(homedir(), '~')}`;
     return line;
   });
-  for (const s of ex.scheduled) out.push(`Still scheduled: ${redact(s.what)}`);
+  for (const s of ex.scheduled) out.push(`- Still scheduled: ${redact(s.what)}`);
   return out.join('\n');
 }
 
@@ -176,8 +177,24 @@ export function imageFiles(ex: Extraction): Map<number, string[]> {
   return files;
 }
 
-/** Keeps a multi-line message inside its list item. */
-const indent = (text: string) => text.split('\n').map((l, k) => (k === 0 || !l ? l : `  ${l}`)).join('\n');
+/** Keeps a multi-line message inside its list item. Only spacing changes: empty lines in a row become
+ * one, and spaces at the ends of lines go. */
+const indent = (text: string) => text.replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n')
+  .split('\n').map((l, k) => (k === 0 || !l ? l : `  ${l}`)).join('\n');
+
+/** Headings in the agent's own text sit one level under the handoff's section that holds them. Code is left alone. */
+function nest(text: string): string {
+  let code = false;
+  const lines = text.split('\n').map((l) => {
+    if (/^\s*(?:```|~~~)/.test(l)) code = !code;
+    return { l, level: code ? 0 : (l.match(/^(#{1,6}) /)?.[1].length ?? 0) };
+  });
+  const shift = Math.max(0, 3 - Math.min(7, ...lines.map((x) => x.level || 7)));
+  return lines.map(({ l, level }) => (level && shift ? `${'#'.repeat(Math.min(6, level + shift) - level)}${l}` : l)).join('\n');
+}
+
+/** Where the images the user sent with one message are saved: names only, and their folder once. */
+const imagesAt = (names: string[], folder: string) => `${names.join(', ')} (in .delulu-handoff/${folder}/images/)`;
 
 /** Everything the user did, newest first. Their words are never shortened. */
 function messageLines(ex: Extraction, redact: (t: string) => string, folder: string, level: number): string {
@@ -189,10 +206,10 @@ function messageLines(ex: Extraction, redact: (t: string) => string, folder: str
       if (t.text.startsWith('/delulu:handoff')) continue;
       const sent = t.how === 'queued' ? '(sent while the agent worked) ' : '';
       const body = t.pasted ? `pasted ${t.pasted.text.split('\n').length} lines from ${t.pasted.source} (not copied here; it is at line ${t.line} of the transcript), then wrote: ${t.typed ?? ''}` : t.text;
-      const files = (images.get(t.line) ?? []).map((f) => `.delulu-handoff/${folder}/images/${f}`);
+      const files = images.get(t.line) ?? [];
       // A message that is only an image says so, instead of an empty line with a path after it.
-      if (!body.trim() && files.length) { out.push(`- ${sent}Sent ${files.length === 1 ? 'an image' : `${files.length} images`}: ${files.join(', ')}`); continue; }
-      out.push(`- ${sent}${indent(redact(body))}${t.maybeApp ? " (may be the app's retry button)" : ''}${files.map((f) => ` · image: ${f}`).join('')}`);
+      if (!body.trim() && files.length) { out.push(`- ${sent}Sent ${files.length === 1 ? 'an image' : `${files.length} images`}: ${imagesAt(files, folder)}`); continue; }
+      out.push(`- ${sent}${indent(redact(body))}${t.maybeApp ? " (may be the app's retry button)" : ''}${files.length ? `\n  ${files.length === 1 ? 'Image' : 'Images'}: ${imagesAt(files, folder)}` : ''}`);
     } else if (t.kind === 'asked') {
       for (const q of [...t.questions].reverse()) {
         // Past the newest answers, a plain pick keeps its question in short: a pick answers only its question.
@@ -200,12 +217,12 @@ function messageLines(ex: Extraction, redact: (t: string) => string, folder: str
         const pick = a.outcome === 'answered' && a.items.length === 1 && a.items[0].picked ? a.items[0].text : '';
         if (level >= 1 && shown++ >= RECENT_ANSWERS && pick) {
           const label = pick.replace(RECOMMENDED, '');
-          out.push(`- Asked "${clipText(q.question, 90, redact)}": ${label !== pick ? `took the agent's recommendation "${redact(label)}"` : `picked "${redact(label)}"`}`);
-        } else out.push(`- Asked "${redact(q.question)}": ${indent(answerText(q, redact))}`);
+          out.push(`- Asked: "${clipText(q.question, 90, redact)}"\n  The user ${label !== pick ? `took the agent's recommendation "${redact(label)}"` : `picked "${redact(label)}"`}`);
+        } else out.push(`- Asked: "${indent(redact(q.question))}"\n  ${indent(answerText(q, redact))}`);
       }
     } else if (t.kind === 'stopped') out.push(`- ${t.appClosed ? 'The app closed while the agent was working' : 'Stopped the agent'}`);
-    else if (t.kind === 'refused') out.push(`- Turned down ${t.tool}: ${redact(t.what)}`);
+    else if (t.kind === 'refused') out.push(`- Turned down ${t.tool}${t.what.trim() ? `: ${redact(t.what)}` : ''}`);
     else out.push(`- Another session ("${t.from}") sent this, not the user: ${indent(redact(t.text))}`);
   }
-  return out.join('\n');
+  return out.join('\n\n');
 }

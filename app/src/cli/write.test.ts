@@ -33,7 +33,7 @@ describe('renderHandoff: the top lines and the repo', () => {
   it('names how the session ended, what it continues, and records it could not place', () => {
     const out = renderHandoff(input({ ex: base({ ended: { kind: 'limit', line: 90, text: "You've hit your session limit" },
       copied: { from: 'b8f52ff0-x', fromLine: 1, untilLine: 40, records: 40 }, unplaced: [12, 30] }) }));
-    expect(out).toContain('Transcript: ~/.claude/projects/p/abc.jsonl\n');
+    expect(out).toContain('Transcript: ~/.claude/projects/p/abc.jsonl (the whole session: look here for anything this handoff leaves out)\n');
     expect(out).toContain("The session ended on a usage limit: You've hit your session limit");
     expect(out).toContain('This chat was reopened from an earlier one. What came before that one was saved is in its own handoff, not repeated here.');
     expect(out).not.toContain('b8f52ff0');
@@ -74,10 +74,10 @@ describe("renderHandoff: the user's messages", () => {
       q('Anything else?', [], { outcome: 'answered', items: [{ text: 'fix the footer too', picked: false }], notes: 'urgent' }),
       q('Merge?', [], { outcome: 'app-closed' }),
     ] }] }) }));
-    expect(out).toContain('- Asked "Which fix first?": picked "Prune" (Deletes newest handoffs east of UTC.)');
-    expect(out).toContain('- Asked "Ship now?": took the agent\'s recommendation "Ship after the live test"');
-    expect(out).toContain('- Asked "Anything else?": wrote: fix the footer too · notes: urgent');
-    expect(out).toContain('- Asked "Merge?": the app closed before an answer');
+    expect(out).toContain('- Asked: "Which fix first?"\n  The user picked "Prune" (Deletes newest handoffs east of UTC.)');
+    expect(out).toContain('- Asked: "Ship now?"\n  The user took the agent\'s recommendation "Ship after the live test"');
+    expect(out).toContain('- Asked: "Anything else?"\n  The user wrote: fix the footer too · notes: urgent');
+    expect(out).toContain('- Asked: "Merge?"\n  The app closed before an answer');
   });
 
   it('marks stops, app closes, refusals, pastes, images and other sessions, never as the user speaking', () => {
@@ -89,13 +89,15 @@ describe("renderHandoff: the user's messages", () => {
       { kind: 'said', line: 10, text: 'look', how: 'typed', images: [{ mediaType: 'image/png', data: 'x' }] },
       { kind: 'said', line: 12, text: '', how: 'typed', images: [{ mediaType: 'image/jpeg', data: 'y' }] },
     ] }) }));
-    expect(out).toContain('- Sent an image: .delulu-handoff/F/images/image-2.jpg\n');
+    expect(out).toContain('- Sent an image: image-2.jpg (in .delulu-handoff/F/images/)\n');
     expect(out).toContain('- Stopped the agent');
     expect(out).toContain('- The app closed while the agent was working');
     expect(out).toContain('- Turned down Bash: Force push main');
+    expect(renderHandoff(input({ ex: base({ turns: [{ kind: 'refused', line: 6, tool: 'Browser', what: '' }], ended: { kind: 'mid-action', line: 9, text: 'AskUserQuestion: ' } }) })))
+      .toMatch(/^The session ended in the middle of an action: AskUserQuestion\n[\s\S]*^- Turned down Browser$/m);
     expect(out).toContain('- Another session ("projectprevious-ee") sent this, not the user: mine the transcripts');
     expect(out).toContain('- pasted 2 lines from Terminal (not copied here; it is at line 8 of the transcript), then wrote: why');
-    expect(out).toContain('- look · image: .delulu-handoff/F/images/image-1.png');
+    expect(out).toContain('- look\n  Image: image-1.png (in .delulu-handoff/F/images/)');
   });
 });
 
@@ -124,7 +126,15 @@ describe('renderHandoff: subagents and background tasks', () => {
     expect(out).toContain('- Subagent "Build kerb": failed (Agent "Build kerb" failed: session limit) · last words: "Halfway through the kerb." · changed: /r/a.ts, /r/b.ts · worked on branch `worktree-agent-a2`');
     expect(out).toContain('- Background command "Run the tests": still running when saved');
     expect(out).toContain('- Subagent "Check docs": never started (Tool permission request failed: AbortError)');
-    expect(out).toContain('Still scheduled: Repo health check (0 13 * * 1,4)');
+    expect(out).toContain('- Still scheduled: Repo health check (0 13 * * 1,4)');
+  });
+
+  it("keeps each helper on its one line, even when its last words or reason run over several", () => {
+    const out = renderHandoff(input({ ex: base({ helpers: [
+      { kind: 'agent', line: 4, what: 'Harden CSP', ended: 'stopped', how: 'Stopped\nby the user', lastWords: 'Done. Nothing pushed.\n\n## What the docs say\n\n`csp.md` is the guide.' },
+    ] }) }));
+    expect(out).toContain('- Subagent "Harden CSP": stopped (Stopped by the user) · last words: "Done. Nothing pushed. ## What the docs say `csp.md` is the guide."');
+    expect(out.match(/^## /gm)).toHaveLength(3);
   });
 
   it('folds retries of the same helper into one line with its final outcome', () => {
@@ -154,9 +164,9 @@ describe('renderHandoff: fitting one read', () => {
     expect(out).toContain(typed);
     expect(out).not.toContain('Report starts');
     expect(out).toContain('(the rest is at line 800 of the transcript)');
-    expect(out).toMatch(/- Asked "Question 0 about the parser [^"]*…": took the agent's recommendation "Keep it"/);
+    expect(out).toMatch(/- Asked: "Question 0 about the parser [^"]*…"\n {2}The user took the agent's recommendation "Keep it"/);
     expect(out).not.toContain(`Question 0 ${'about the parser '.repeat(8)}?`);
-    expect(out).toContain('- Asked "Question 59');
+    expect(out).toContain('- Asked: "Question 59');
   });
 
   it('leaves a handoff that already fits exactly as it is', () => {
@@ -177,7 +187,24 @@ describe('renderHandoff: details found on a real session', () => {
   it('keeps a multi-line typed answer inside its list item', () => {
     const out = renderHandoff(input({ ex: base({ turns: [{ kind: 'asked', line: 5, before: '', questions: [{ question: 'Build it?', options: [],
       answer: { outcome: 'answered', items: [{ text: 'not yet\n\nshow me first', picked: false }] } }] }] }) }));
-    expect(out).toContain('- Asked "Build it?": wrote: not yet\n\n  show me first');
+    expect(out).toContain('- Asked: "Build it?"\n  The user wrote: not yet\n\n  show me first');
+  });
+
+  it('puts an empty line between entries, and turns empty lines in a row into one without touching a word', () => {
+    const out = renderHandoff(input({ ex: base({ turns: [
+      { kind: 'said', line: 3, text: 'first ask  ', how: 'typed' },
+      { kind: 'said', line: 5, text: 'fix it \n\n\n\n  and the pike one too\n\n\ncheck all', how: 'typed' },
+    ] }) }));
+    const part = out.slice(out.indexOf("## The user's messages"));
+    expect(part).toContain('- fix it\n\n    and the pike one too\n\n  check all\n\n- first ask\n');
+  });
+
+  it("nests the agent's own headings under the section that holds them, and leaves code alone", () => {
+    const note = '## Where things stand\nDone.\n### Detail\n```sh\n# a comment\n```';
+    const out = renderHandoff(input({ note, ex: base({ saves: [20], replies: [{ line: 18, text: '# Summary\nAll in.' }] }) }));
+    expect(out).toContain('pushed with git)\n### Where things stand\nDone.\n#### Detail\n```sh\n# a comment\n```');
+    expect(out).toContain("The agent's last reply:\n### Summary\nAll in.");
+    expect(out.match(/^## /gm)).toHaveLength(3);
   });
 });
 

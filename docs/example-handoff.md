@@ -14,7 +14,7 @@ How to carry on:
 
 ---
 # burst-drops-sliding-window · ratelimiter handoff · saved Tue Sep 15, 2026
-Transcript: ~/.claude/projects/-Users-sam-ratelimiter/5f1c2a9e-7d41-4b8a-9c3e-2a6b1f0d8e47.jsonl
+Transcript: ~/.claude/projects/-Users-sam-ratelimiter/5f1c2a9e-7d41-4b8a-9c3e-2a6b1f0d8e47.jsonl (the whole session: look here for anything this handoff leaves out)
 
 ## Last agent's summary (not checked, so confirm anything it calls done, committed or pushed with git)
 Where things stand: the burst drops are fixed and committed on `main`, not pushed.
@@ -44,8 +44,13 @@ Understood. The fix is committed locally and not pushed, and the Redis migration
 
 ## The user's messages, newest first
 - good. leave the redis migration alone for now, thats next week
+
 - also this has to stay O(1) memory per caller, we have 200k of them. thats not negotiable
-- Asked "Which fix?": took the agent's recommendation "Sliding-window counter"
+
+- Asked: "Which fix?"
+  The user took the agent's recommendation "Sliding-window counter"
+
 - so its the window not the count. dont just bump the number
+
 - the rate limiter drops requests in bursts even when the caller is well under the limit. figure out why before changing anything
 ````

@@ -1,5 +1,5 @@
-// delulu handoff: saves this session for the next one. The agent has already written its note to
-// .delulu-handoff/note-<session id>.md. This reads the transcript and git, and writes one handoff file, asking
+// delulu handoff: saves this session for the next one. The agent has already named the session and
+// written its note to .delulu-handoff/<name>.md. This reads the transcript and git, and writes one handoff file, asking
 // nothing. A handoff is about the one session it saves: nothing is copied from earlier handoffs.
 import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
@@ -42,6 +42,8 @@ function fail(message: string): void {
 function main(): void {
   const argv = process.argv.slice(2);
   const flag = (name: string) => { const k = argv.lastIndexOf(name); return k >= 0 ? argv[k + 1] : undefined; };
+  // The session's name, which is also its note's file name: plain words and hyphens, so never a path.
+  const named = argv.find((a, k) => !a.startsWith('--') && !argv[k - 1]?.startsWith('--') && /^[\p{L}\p{N}][\p{L}\p{N}-]{0,59}$/u.test(a));
   const where = flag('--repo') ?? process.cwd();
   let repo: string;
   try { repo = repoKey(where); } catch { return fail(`not a readable folder: ${where}. Nothing was saved.`); }
@@ -58,10 +60,11 @@ function main(): void {
   const base = join(repo, '.delulu-handoff');
   // A link here would send writes, and the pruning of old handoffs, somewhere outside this folder.
   try { if (lstatSync(base).isSymbolicLink()) return fail('.delulu-handoff is a link to somewhere else, so nothing was saved. Replace it with a plain folder.'); } catch { /* not there yet */ }
-  // Each session writes its own note, so two sessions saving in one folder never take each other's.
-  // A plain note.md is read only when this session's own note is missing.
+  // Each session's note is named after it, so two sessions saving in one folder never take each other's.
+  // note-<session id>.md is where the command asked for it before names; a plain note.md comes last.
   const sid = process.env.CLAUDE_CODE_SESSION_ID;
-  const candidates = [...(sid && /^[A-Za-z0-9-]{8,}$/.test(sid) ? [join(base, `note-${sid}.md`)] : []), join(base, 'note.md')];
+  const candidates = [...(named ? [join(base, `${named}.md`)] : []),
+    ...(sid && /^[A-Za-z0-9-]{8,}$/.test(sid) ? [join(base, `note-${sid}.md`)] : []), join(base, 'note.md')];
   // A note older than this session belongs to an earlier save that never finished, not to this one.
   let note = '';
   let notePath = candidates[0];
@@ -95,7 +98,7 @@ function main(): void {
     }
   }
   const { name: chosenName, rest } = takeName(note);
-  const cleaned = handoffName(redact(chosenName));
+  const cleaned = handoffName(redact(named || chosenName));
   const name = cleaned ? uniqueName(cleaned, base, folder) : '';
   const out = renderHandoff({ project: basename(repo), name: name || undefined, savedAt: now, transcript: log.replace(homedir(), '~'), folder, ex,
     note: rest || undefined, redact, repo: { branch, commit, uncommitted: dirty, commits } });

@@ -1110,7 +1110,7 @@ function main() {
   const all = handoffs(base);
   let left = "";
   try {
-    const notes = readdirSync2(base).filter((f) => /^note(?:-[A-Za-z0-9-]+)?\.md$/.test(f));
+    const notes = readdirSync2(base).filter((f) => f.endsWith(".md"));
     if (notes.length) {
       const ignored = keepOutOfGit(repo);
       left = `A save that never finished left ${notes.length === 1 ? "a note" : `${notes.length} notes`}: ${notes.map((f) => join5(base, f).replace(homedir3(), "~")).join(", ")}.${ignored ? ` ${ignored}` : ""}`;
