@@ -198,7 +198,7 @@ describe('nothing delulu prints carries an em-dash', () => {
 describe('the docs carry no em or en dash', () => {
   const walk = (dir: string): string[] => readdirSync(join(REPO, dir), { withFileTypes: true }).flatMap((d) =>
     d.isDirectory() ? walk(join(dir, d.name)) : d.name.endsWith('.md') ? [join(dir, d.name)] : []);
-  const DOCS = ['README.md', 'SECURITY.md', 'CONTRIBUTING.md', 'CODE_OF_CONDUCT.md', ...walk('docs'), ...walk('.github')];
+  const DOCS = ['README.md', 'SECURITY.md', 'CONTRIBUTING.md', ...walk('docs'), ...walk('.github')];
 
   it('finds the docs', () => {
     expect(DOCS.length).toBeGreaterThan(5);

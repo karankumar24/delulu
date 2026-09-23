@@ -1,42 +1,65 @@
-# delulu
+<div align="center">
 
-Pick up a Claude Code session in a fresh one, as if you never left.
+<img src="docs/banner.png" alt="delulu" width="720">
 
-A long session ends: the context fills up, you hit a limit, or the day is over. The next session starts blank, and you spend its start explaining what you were doing, what you already ruled out, and what you asked for that still holds. delulu saves what matters from one session and hands it to the next, compactly, so the new one starts almost empty and still knows where you were.
+# delulu is the solulu
 
-Here is [what a handoff looks like](docs/example-handoff.md).
+**End a Claude Code session, open a fresh one, and pick up right where you stopped.**
+
+<a href="https://github.com/karankumar24/delulu/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/karankumar24/delulu/ci.yml?branch=main&style=flat-square&label=ci" alt="ci"></a>
+<a href="#install"><img src="https://img.shields.io/badge/Claude_Code-plugin-D97757?style=flat-square" alt="Claude Code plugin"></a>
+<a href="#install"><img src="https://img.shields.io/badge/node-22%2B-339933?style=flat-square" alt="Node 22+"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT license"></a>
+
+</div>
+
+---
+
+Sessions end. The context fills up, you hit a limit, or it's just late. The next one starts blank, and you end up explaining everything again. delulu saves the session you're in and hands it to the next one.
+
+<table>
+<tr>
+<th width="50%">A fresh session</th>
+<th width="50%">A fresh session with delulu</th>
+</tr>
+<tr>
+<td valign="top">
+
+> **You:** ok where were we
+>
+> **Claude:** I don't have any context from previous sessions. Could you tell me what you were working on?
+
+</td>
+<td valign="top">
+
+> **You:** /delulu:resume
+>
+> **Claude:** Picking up the rate limiter from Sep 15: the sliding-window fix is committed but not pushed. Next is the test for a burst that straddles two windows.
+
+</td>
+</tr>
+</table>
 
 ## Two commands
 
-**`/delulu:handoff`** at the end of a session. The agent names the session in a few words and writes a short note: where things stand, what it found, what was decided, the next step, and what not to do. delulu adds what it can read for itself from the transcript and the repo, and saves one file under that name.
+**`/delulu:handoff`** when you're done. The agent names the session and writes a short summary. delulu adds what it can read for itself from the transcript and the repo, and saves it all as one file.
 
-**`/delulu:resume`** in a fresh session. It loads the newest handoff, says what changed in the repo since it was saved, and tells the agent how to carry on. The agent opens with one line on where it is picking up, and tells you about any work after the save that no handoff holds. Add a handoff's name after the command to load that one instead, or a few words to say what you want to do first. `/delulu:resume --list` shows the handoffs you have, by name.
+**`/delulu:resume`** in the next session. It loads the newest handoff, tells you what changed in the repo since, flags any work done after the save, and carries on. Add a handoff's name to load a specific one, or `--list` to see them all.
 
-Neither command asks you anything. Nothing runs in the background, and nothing is registered to fire on its own: delulu does nothing until you type one of the two.
+Neither command asks you anything, and nothing runs in the background.
 
-## What a handoff holds
+## What carries over
 
-- **The last agent's summary.** Its own view of the session, including what was decided in it and where. The next agent is told to check anything it calls done, committed or pushed against git before relying on it.
-- **The repo when saved.** Branch, commit, uncommitted files, and the commits made during the session.
-- **The last exchange.** The agent's final reply before you saved.
-- **Subagents and background tasks.** What was sent off, and how each one ended.
-- **Your messages, newest first.** Word for word, with your answers to the agent's questions. The next agent reads them, and the summary's decisions, as context for where things stood, not as orders.
+- **The agent's summary**: where things stand, what it found, what was decided, the next step, and what not to do. It's marked unchecked, so the next agent confirms anything done or pushed against git.
+- **The repo**: branch, commit, uncommitted files, and the commits made in the session.
+- **The agent's last reply**, and how each subagent or background task ended.
+- **Every message you sent**, word for word, with your answers to its questions.
 
-A handoff is about the one session it saves. Nothing is copied into it from older handoffs.
-
-A handoff aims to fit in one read. When a session is long, the least useful detail is shortened first; your own words never are. Your words are copied exactly, so the next agent can find them in the transcript when it needs to read further.
-
-## What it reads, and where it goes
-
-delulu reads your session transcript from disk and writes to `.delulu-handoff/` in your repository. Each folder keeps its own handoffs, and a git worktree is its own folder; resume mentions a newer handoff in another worktree of the same repository. Nothing is sent anywhere. The folder and everything in it are readable only by you, and the first save adds `.delulu-handoff/` to your `.gitignore`. The fifteen newest handoffs are kept.
-
-API keys, tokens and passwords are hidden from everything it writes. So are email addresses, apart from your own and any you typed yourself. Images you sent are saved beside the handoff exactly as they were, not redacted. [SECURITY.md](SECURITY.md) has the details.
-
-Your handoffs hold your own messages word for word. That is the point of them, and worth knowing before you share one.
+A handoff holds one session, the one you saved. Nothing piles up from older ones. [See a full example.](docs/example-handoff.md)
 
 ## Install
 
-Requires Node 22 or newer. In Claude Code:
+Needs Node 22 or newer. In Claude Code:
 
 ```
 /plugin marketplace add karankumar24/delulu
@@ -46,24 +69,22 @@ Requires Node 22 or newer. In Claude Code:
 /plugin install delulu@delulu
 ```
 
-If the two commands do not appear straight away, run `/reload-plugins`.
+If the commands don't show up, run `/reload-plugins`.
 
-delulu has not been run on Windows yet. Its path handling is tested, but only on macOS and Linux. If you try it there, please open an issue either way.
+## Your data
 
-## Limits
+- delulu reads your session from disk and writes to `.delulu-handoff/` in your repo. Nothing is sent anywhere.
+- That folder is readable only by you, and the first save adds it to `.gitignore`. The 15 newest handoffs are kept.
+- API keys, tokens, passwords and email addresses are redacted, except your own email and any you typed. Images are saved as you sent them.
+- Your messages are copied word for word, so read a handoff before you share it. [SECURITY.md](SECURITY.md) has the details.
 
-- A handoff carries one session, the one you saved. Something from an older session reaches the next one only if it came up again in that session.
-- Redaction matches known shapes of secrets. It will not catch a secret with no recognisable shape, or one described in words.
-- The summary is only as good as the agent that wrote it, which is why the next agent is told to check it.
+## Good to know
 
-## Development
+- Redaction matches known shapes of secrets. It won't catch one written out in plain words.
+- The summary is the last agent's own view, which is why the next one checks it.
+- Each folder keeps its own handoffs, and so does each git worktree.
+- Not tried on Windows yet. If you run it there, please open an issue either way.
 
-```
-cd app && npm ci && npm test
-```
+## Contributing
 
-What a user installs is `plugin/`: the two slash commands and the two scripts they run, `plugin/hook/handoff.mjs` and `plugin/hook/resume.mjs`. Those scripts are built from `app/src/` by `npm run build`. Commit them with your change; CI fails if they differ from the source.
-
-`npm run dev` builds and then mirrors your working copy into the installed plugin at `~/.claude/plugins/cache/delulu/`, so a fresh session runs what you just changed. The mirror removes files from the install that your working copy no longer has. Your clone is never touched.
-
-MIT.
+Issues and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers the setup. MIT licensed.
