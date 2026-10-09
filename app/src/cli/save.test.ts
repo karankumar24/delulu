@@ -61,7 +61,8 @@ describe('save', () => {
     expect(out).not.toContain('name:');
     const other = join(repo, '..', `${repo.split('/').pop()}-other.jsonl`);
     made.push(other);
-    writeFileSync(other, `${JSON.stringify(user('another window'))}\n`);
+    // Started a minute ago, so the note written next is never older than the session on a coarse clock.
+    writeFileSync(other, `${JSON.stringify({ ...user('another window'), timestamp: new Date(Date.now() - 60_000).toISOString() })}\n`);
     writeFileSync(join(base, 'note.md'), '**Name:** footer fix part one\nSecond pass.\n');
     expect(run(repo, other).stdout).toMatch(/^delulu saved this session: footer-fix-part-one-2$/m);
   });
