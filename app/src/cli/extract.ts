@@ -243,6 +243,7 @@ export function extractSession(log: string, opts: { siblings?: string[] } = {}):
       }
       words = kept.join('\n\n');
     }
+    words = appMarkupOff(words);
     const shots = { ...(ev.images?.length ? { images: ev.images } : {}), ...(ev.imagesUnsaved ? { imagesUnsaved: ev.imagesUnsaved } : {}) };
     if (!words && !shots.images && !shots.imagesUnsaved) continue;
     if (INTERRUPT.test(words)) { turns.push({ kind: 'stopped', line: ev.line, ...atOf(ev.line), appClosed: !!lines[ev.line - 1]?.shutdown }); continue; }
@@ -323,6 +324,17 @@ function endingOf(flow: { line: number; rec: Rec }[], inCopy: (line: number) => 
     if (answered || textOf(msg?.content).trim()) tail = undefined;
   }
   return tail;
+}
+
+/**
+ * What the user sent, as the app shows it: a paste as its text, and a `!` shell command as `! command`
+ * without its output, which is the shell's, not the user's.
+ */
+function appMarkupOff(t: string): string {
+  return t
+    .replace(/<bash-input>([\s\S]*?)<\/bash-input>(?:<bash-stdout>[\s\S]*?<\/bash-stdout>)?(?:<bash-stderr>[\s\S]*?<\/bash-stderr>)?/g, (_, cmd: string) => `! ${cmd.trim()}`)
+    .replace(/<pasted_content id="([^"]*)">\n?([\s\S]*?)\n?<\/pasted_content id="\1">/g, '$2')
+    .trim();
 }
 
 /** A message that opens with an attached excerpt: the quoted lines are the paste, the rest is typed. */

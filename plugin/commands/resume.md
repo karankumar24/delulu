@@ -7,7 +7,7 @@ allowed-tools: Bash(node:*), Read
 Run this command and read all of its output:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/hook/resume.mjs" $ARGUMENTS
+node "${CLAUDE_PLUGIN_ROOT}/hook/resume.mjs" "$ARGUMENTS"
 ```
 
 Then follow the "How to carry on" steps it prints. If it says the handoff continues in a file, read the rest before you reply.

@@ -657,6 +657,7 @@ function extractSession(log, opts = {}) {
       }
       words = kept.join("\n\n");
     }
+    words = appMarkupOff(words);
     const shots = { ...ev.images?.length ? { images: ev.images } : {}, ...ev.imagesUnsaved ? { imagesUnsaved: ev.imagesUnsaved } : {} };
     if (!words && !shots.images && !shots.imagesUnsaved) continue;
     if (INTERRUPT.test(words)) {
@@ -740,6 +741,9 @@ function endingOf(flow, inCopy) {
     if (answered || textOf(msg?.content).trim()) tail = void 0;
   }
   return tail;
+}
+function appMarkupOff(t) {
+  return t.replace(/<bash-input>([\s\S]*?)<\/bash-input>(?:<bash-stdout>[\s\S]*?<\/bash-stdout>)?(?:<bash-stderr>[\s\S]*?<\/bash-stderr>)?/g, (_, cmd) => `! ${cmd.trim()}`).replace(/<pasted_content id="([^"]*)">\n?([\s\S]*?)\n?<\/pasted_content id="\1">/g, "$2").trim();
 }
 function pasteOf(words) {
   const head = words.match(/^<!-- attach: (.*?) -->\n/);

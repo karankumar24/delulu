@@ -66,6 +66,15 @@ describe('extractSession: your messages', () => {
     ]);
   });
 
+  it('carries a paste and a ! shell command as the app shows them, without its markup or the shell\'s output', () => {
+    const log = write('s', [
+      typed('look at this\n\n<pasted_content id="5cb7">\nHTTP 403 from the API\n</pasted_content id="5cb7">\n\nwhy?'),
+      typed('<bash-input>gh repo delete x --yes</bash-input><bash-stdout>HTTP 403: Must have admin rights</bash-stdout><bash-stderr></bash-stderr>'),
+    ]);
+    expect(extractSession(log).turns.map((t) => t.kind === 'said' && t.text))
+      .toEqual(['look at this\n\nHTTP 403 from the API\n\nwhy?', '! gh repo delete x --yes']);
+  });
+
   it('carries a message typed while the agent was working', () => {
     const log = write('s', [said('working'), queued('stop, do the sort bug instead')]);
     expect(extractSession(log).turns).toEqual([

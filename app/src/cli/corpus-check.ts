@@ -43,6 +43,13 @@ const COMMAND = /^\/(\S+)(?:\s+([\s\S]*))?$/;
 // so the check does not share the extraction's own list of what counts as machine text.
 const APP_BLOCK = /^<(?:task-notification|system-reminder|create-pr-command|ci-monitor-event|agent-message|cross-session-message)\b/i;
 
+// The app's markup around a paste and a `!` shell command, read back as the app shows them: the paste's
+// text, and `! command` without the shell's output. Its own copy, like APP_BLOCK.
+const asShown = (t: string) => t
+  .replace(/<bash-input>([\s\S]*?)<\/bash-input>(?:<bash-stdout>[\s\S]*?<\/bash-stdout>)?(?:<bash-stderr>[\s\S]*?<\/bash-stderr>)?/g, (_, c: string) => `! ${c.trim()}`)
+  .replace(/<pasted_content id="([^"]*)">\n?([\s\S]*?)\n?<\/pasted_content id="\1">/g, '$2')
+  .trim();
+
 /** `/name words` as delivered or carried, against `/name words` as typed. The app may add a plugin prefix. */
 function sameCommand(text: string, typed: RegExpExecArray, exact: boolean): boolean {
   const got = COMMAND.exec(text);
@@ -126,14 +133,14 @@ for (const project of readdirSync(root, { withFileTypes: true }).filter((d) => d
       const kind = obj(r.origin ?? att?.origin)?.kind;
       const name = raw.match(/<command-name>\s*([^<\s]+)/)?.[1];
       const words = raw.match(/<command-args>([\s\S]*?)<\/command-args>/)?.[1] ?? '';
-      delivered.push({ line: i + 1, text: name ? `${name} ${words}`.trim() : raw.trim(), app: r.isMeta === true || (kind !== undefined && kind !== 'human') });
+      delivered.push({ line: i + 1, text: name ? `${name} ${words}`.trim() : asShown(raw), app: r.isMeta === true || (kind !== undefined && kind !== 'human') });
     });
     const carried = new Set(said.map((s) => s.text));
     const carriedFlat = said.map((s) => flat(s.text));
     const noticeTexts = new Set(ex.notices.map((n) => n.text));
     recs.forEach((r, i) => {
       if (!r || r.type !== 'queue-operation' || r.operation !== 'enqueue' || !own(i + 1)) return;
-      const text = textOf(r.content).trim();
+      const text = asShown(textOf(r.content));
       if (!text || BARE_COMMAND.test(text) || APP_BLOCK.test(text)) return;
       const where = `${sid}:${i + 1}`;
       const f = flat(text);
