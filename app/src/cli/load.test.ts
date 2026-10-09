@@ -114,11 +114,11 @@ describe('load: handoffs by name', () => {
     await new Promise((done) => { setTimeout(done, 20); });
     handoff(base, '2026-09-15T09-00-00', '# ladder-fix · p handoff · saved Tue Sep 15, 2026\nLADDER\n');
     await new Promise((done) => { setTimeout(done, 20); });
-    handoff(base, '2026-09-15T10-00-00', '# camera-swap · p handoff · saved Tue Sep 15, 2026\nCAMERA\n');
+    handoff(base, '2026-09-15T10-00-00', '# camera swap · p handoff · saved Tue Sep 15, 2026\nCAMERA\n');
     const list = run(repo, config, '--list').stdout;
-    expect(list).toMatch(/- camera-swap · Sep 15 at 10:00 AM[^\n]*\n- ladder-fix · Sep 15 at 9:00 AM[^\n]*\n- Sep 14 handoff · Sep 14 at 9:00 AM/);
+    expect(list).toMatch(/- camera swap · Sep 15 at 10:00 AM[^\n]*\n- ladder fix · Sep 15 at 9:00 AM[^\n]*\n- Sep 14 handoff · Sep 14 at 9:00 AM/);
     const byName = run(repo, config, 'ladder', 'fix').stdout;
-    expect(byName).toMatch(/^delulu resume: ladder-fix, saved Sep 15 at 9:00 AM/);
+    expect(byName).toMatch(/^delulu resume: ladder fix, saved Sep 15 at 9:00 AM/);
     expect(byName).toContain('LADDER');
     expect(byName).not.toContain('When resuming, the user added');
     expect(run(repo, config, 'Sep', '14').stdout).toContain('OLD');

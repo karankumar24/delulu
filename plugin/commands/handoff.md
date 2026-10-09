@@ -6,7 +6,7 @@ allowed-tools: Bash(node:*), Write
 
 Save this session for the next one. Do not ask the user anything.
 
-1. Name this session: 2 to 5 plain words saying what it was about, lowercase and joined by hyphens, like `ladder-fix-live-check`. It is how the user will find this handoff again.
+1. Name this session: 2 or 3 plain lowercase words saying what it was about, with spaces between them, like `checkout page fix`. It is how the user will find this handoff again.
 
 2. Write your summary of this session to `.delulu-handoff/<name>.md` in the project folder with the Write tool. Cover this session only, short and specific:
    - Where things stand. Use real dates, never words like "tonight" or "earlier".
@@ -18,7 +18,7 @@ Save this session for the next one. Do not ask the user anything.
 3. Run this command with the same name and show the user its output:
 
    ```
-   node "${CLAUDE_PLUGIN_ROOT}/hook/handoff.mjs" <name>
+   node "${CLAUDE_PLUGIN_ROOT}/hook/handoff.mjs" "<name>"
    ```
 
 That is all. Do not edit the handoff it writes.

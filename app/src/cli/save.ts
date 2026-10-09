@@ -12,7 +12,7 @@ import type { Extraction } from './extract';
 import { makeRedactor } from './redact';
 import { resolveLog } from './resolve-log';
 import { handoffLabel } from './dates';
-import { handoffName, nameInTitle, takeName } from './name';
+import { handoffName, nameInTitle, nameWords, takeName } from './name';
 import { imageFiles, renderHandoff } from './write';
 
 const KEEP = 15;
@@ -43,7 +43,9 @@ function main(): void {
   const argv = process.argv.slice(2);
   const flag = (name: string) => { const k = argv.lastIndexOf(name); return k >= 0 ? argv[k + 1] : undefined; };
   // The session's name, which is also its note's file name: plain words and hyphens, so never a path.
-  const named = argv.find((a, k) => !a.startsWith('--') && !argv[k - 1]?.startsWith('--') && /^[\p{L}\p{N}][\p{L}\p{N}-]{0,59}$/u.test(a));
+  // The name may arrive as one quoted argument or as separate words.
+  const given = argv.filter((a, k) => !a.startsWith('--') && !argv[k - 1]?.startsWith('--')).join(' ').trim();
+  const named = /^[\p{L}\p{N}][\p{L}\p{N} -]{0,59}$/u.test(given) ? given : undefined;
   const where = flag('--repo') ?? process.cwd();
   let repo: string;
   try { repo = repoKey(where); } catch { return fail(`not a readable folder: ${where}. Nothing was saved.`); }
@@ -124,14 +126,14 @@ function savedFrom(folder: string): string | undefined {
   try { return readFileSync(join(folder, 'handoff.md'), 'utf8').slice(0, 2000).match(/^Transcript: (.+?) \(the whole session/m)?.[1]; } catch { return undefined; }
 }
 
-/** The name, or the name with -2, -3 and so on when another handoff here already has it. */
+/** The name, or the name with 2, 3 and so on when another handoff here already has it. */
 function uniqueName(name: string, base: string, skip: string[]): string {
   const taken = new Set(handoffFolders(base).filter((f) => !skip.includes(f)).map((f) => {
-    try { return nameInTitle(readFileSync(join(base, f, 'handoff.md'), 'utf8').slice(0, 500)); } catch { return undefined; }
+    try { return nameWords(nameInTitle(readFileSync(join(base, f, 'handoff.md'), 'utf8').slice(0, 500)) ?? ''); } catch { return undefined; }
   }));
   let n = 1;
-  while (taken.has(n === 1 ? name : `${name}-${n}`)) n++;
-  return n === 1 ? name : `${name}-${n}`;
+  while (taken.has(n === 1 ? name : `${name} ${n}`)) n++;
+  return n === 1 ? name : `${name} ${n}`;
 }
 
 /** Keeps the newest handoffs. */

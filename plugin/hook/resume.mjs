@@ -1028,12 +1028,11 @@ var RESUME_LINES_BYTES = 1500;
 var HANDOFF_BYTES = ONE_READ_BYTES - RESUME_LINES_BYTES;
 
 // src/cli/name.ts
-function handoffName(raw) {
-  const words = raw.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim().split(/\s+/).filter(Boolean).slice(0, 5);
-  return words.join("-").slice(0, 48).replace(/-+$/, "");
+function nameWords(raw) {
+  return raw.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
 function nameInTitle(text) {
-  return text.match(/^# (\S+) · .* handoff · saved /m)?.[1];
+  return text.match(/^# (.+?) · .* handoff · saved /m)?.[1];
 }
 
 // src/cli/resolve-log.ts
@@ -1086,7 +1085,7 @@ function handoffs(base) {
     } catch {
     }
     const session = basename3(head.match(/^Transcript: (\S+\.jsonl)/m)?.[1] ?? "", ".jsonl") || void 0;
-    return [{ folder, file, created, name: nameInTitle(head), session }];
+    return [{ folder, file, created, name: nameWords(nameInTitle(head) ?? "") || void 0, session }];
   }).sort((a, b) => b.created - a.created || (a.folder < b.folder ? 1 : -1));
 }
 var say = (text) => {
@@ -1133,8 +1132,8 @@ function main() {
   }
   const said = words.join(" ").trim();
   const q = said.toLowerCase();
-  const asName = handoffName(said);
-  const named = said ? all.find((h) => !!h.name && h.name === asName || h.folder.startsWith(said) || handoffLabel(h.folder, now).toLowerCase().includes(q)) : void 0;
+  const asName = nameWords(said);
+  const named = said ? all.find((h) => !!h.name && nameWords(h.name) === asName || h.folder.startsWith(said) || handoffLabel(h.folder, now).toLowerCase().includes(q)) : void 0;
   const chosen = named ?? all[0];
   const text = readFileSync4(chosen.file, "utf8");
   const when = stampWhen(chosen.folder, now);

@@ -54,9 +54,9 @@ describe('save', () => {
     mkdirSync(base);
     writeFileSync(join(base, 'note.md'), 'name: Footer fix, part one!\n\nFooter fixed. Next: ship.\n');
     const first = run(repo, log);
-    expect(first.stdout).toMatch(/^delulu saved this session: footer-fix-part-one$/m);
+    expect(first.stdout).toMatch(/^delulu saved this session: footer fix part$/m);
     const out = readFileSync(join(base, folders(base)[0], 'handoff.md'), 'utf8');
-    expect(out.split('\n')[0]).toMatch(/^# footer-fix-part-one · delulu-save-\S+ handoff · saved /);
+    expect(out.split('\n')[0]).toMatch(/^# footer fix part · delulu-save-\S+ handoff · saved /);
     expect(out).toContain('pushed with git)\nFooter fixed. Next: ship.');
     expect(out).not.toContain('name:');
     const other = join(repo, '..', `${repo.split('/').pop()}-other.jsonl`);
@@ -64,7 +64,7 @@ describe('save', () => {
     // Started a minute ago, so the note written next is never older than the session on a coarse clock.
     writeFileSync(other, `${JSON.stringify({ ...user('another window'), timestamp: new Date(Date.now() - 60_000).toISOString() })}\n`);
     writeFileSync(join(base, 'note.md'), '**Name:** footer fix part one\nSecond pass.\n');
-    expect(run(repo, other).stdout).toMatch(/^delulu saved this session: footer-fix-part-one-2$/m);
+    expect(run(repo, other).stdout).toMatch(/^delulu saved this session: footer fix part 2$/m);
   });
 
   it('replaces its own earlier handoff when the same session saves again, keeping the name', () => {
@@ -74,7 +74,7 @@ describe('save', () => {
     run(repo, log);
     const [first] = folders(base);
     writeFileSync(join(base, 'note.md'), 'name: footer fix\n\nSecond pass.\n');
-    expect(run(repo, log).stdout).toMatch(/^delulu saved this session: footer-fix$/m);
+    expect(run(repo, log).stdout).toMatch(/^delulu saved this session: footer fix$/m);
     expect(folders(base)).toHaveLength(1);
     expect(folders(base)[0]).not.toBe(first);
     expect(readFileSync(join(base, folders(base)[0], 'handoff.md'), 'utf8')).toContain('Second pass.');
@@ -115,15 +115,15 @@ describe('save', () => {
   it('reads the summary file named after the session, and names the handoff with it', () => {
     const { repo, log, base } = setup([user('fix the footer')]);
     mkdirSync(base);
-    writeFileSync(join(base, 'footer-fix.md'), 'Mine.\n');
+    writeFileSync(join(base, 'footer fix.md'), 'Mine.\n');
     writeFileSync(join(base, 'other-window.md'), 'The other window.\n');
-    const r = spawnSync('node', [SAVE, 'footer-fix', '--repo', repo, '--log', log], { encoding: 'utf8', env });
-    expect(r.stdout).toMatch(/^delulu saved this session: footer-fix$/m);
+    const r = spawnSync('node', [SAVE, 'footer', 'fix', '--repo', repo, '--log', log], { encoding: 'utf8', env });
+    expect(r.stdout).toMatch(/^delulu saved this session: footer fix$/m);
     const out = readFileSync(join(base, folders(base)[0], 'handoff.md'), 'utf8');
-    expect(out.split('\n')[0]).toMatch(/^# footer-fix · /);
+    expect(out.split('\n')[0]).toMatch(/^# footer fix · /);
     expect(out).toContain('Mine.');
     expect(out).not.toContain('The other window.');
-    expect(existsSync(join(base, 'footer-fix.md'))).toBe(false);
+    expect(existsSync(join(base, 'footer fix.md'))).toBe(false);
     expect(readFileSync(join(base, 'other-window.md'), 'utf8')).toBe('The other window.\n');
   });
 

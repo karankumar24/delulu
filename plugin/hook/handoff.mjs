@@ -1135,8 +1135,10 @@ function handoffLabel(stamp2, now) {
 
 // src/cli/name.ts
 function handoffName(raw) {
-  const words = raw.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim().split(/\s+/).filter(Boolean).slice(0, 5);
-  return words.join("-").slice(0, 48).replace(/-+$/, "");
+  return nameWords(raw).split(" ").slice(0, 3).join(" ").slice(0, 40).trim();
+}
+function nameWords(raw) {
+  return raw.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
 var NAME_LINE = /^[ \t]*(?:[-*][ \t]*)?(?:\*\*)?name(?:\*\*)?[ \t]*:(?:\*\*)?[ \t]*(.+)$/i;
 function takeName(note) {
@@ -1147,7 +1149,7 @@ function takeName(note) {
   return { name, rest: lines.filter((_, j) => j !== k).join("\n").trim() };
 }
 function nameInTitle(text) {
-  return text.match(/^# (\S+) · .* handoff · saved /m)?.[1];
+  return text.match(/^# (.+?) · .* handoff · saved /m)?.[1];
 }
 
 // src/cli/write.ts
@@ -1383,7 +1385,8 @@ function main() {
     const k = argv.lastIndexOf(name2);
     return k >= 0 ? argv[k + 1] : void 0;
   };
-  const named = argv.find((a, k) => !a.startsWith("--") && !argv[k - 1]?.startsWith("--") && /^[\p{L}\p{N}][\p{L}\p{N}-]{0,59}$/u.test(a));
+  const given = argv.filter((a, k) => !a.startsWith("--") && !argv[k - 1]?.startsWith("--")).join(" ").trim();
+  const named = /^[\p{L}\p{N}][\p{L}\p{N} -]{0,59}$/u.test(given) ? given : void 0;
   const where = flag("--repo") ?? process.cwd();
   let repo;
   try {
@@ -1484,14 +1487,14 @@ function savedFrom(folder) {
 function uniqueName(name, base, skip) {
   const taken = new Set(handoffFolders(base).filter((f) => !skip.includes(f)).map((f) => {
     try {
-      return nameInTitle(readFileSync4(join5(base, f, "handoff.md"), "utf8").slice(0, 500));
+      return nameWords(nameInTitle(readFileSync4(join5(base, f, "handoff.md"), "utf8").slice(0, 500)) ?? "");
     } catch {
       return void 0;
     }
   }));
   let n = 1;
-  while (taken.has(n === 1 ? name : `${name}-${n}`)) n++;
-  return n === 1 ? name : `${name}-${n}`;
+  while (taken.has(n === 1 ? name : `${name} ${n}`)) n++;
+  return n === 1 ? name : `${name} ${n}`;
 }
 function prune(base, keep) {
   const older = handoffFolders(base).filter((f) => f !== keep);

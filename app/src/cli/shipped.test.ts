@@ -74,7 +74,7 @@ describe('what delulu tells the next session is about any user, not about its au
     const prompt = readFileSync(resolve(APP, '../plugin/commands/handoff.md'), 'utf8');
     expect(prompt).toContain('Cover this session only');
     expect(prompt).toContain('`.delulu-handoff/<name>.md`');
-    expect(prompt).toContain('hook/handoff.mjs" <name>');
+    expect(prompt).toContain('hook/handoff.mjs" "<name>"');
     expect(prompt).not.toMatch(/standing rules|handoff this session loaded/i);
   });
 

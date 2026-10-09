@@ -10,7 +10,7 @@ import { clockNow, handoffLabel, stampWhen } from './dates';
 import { isProgram } from './entry';
 import { extractSession } from './extract';
 import { ONE_READ_BYTES } from './limits';
-import { handoffName, nameInTitle } from './name';
+import { nameInTitle, nameWords } from './name';
 import { projectSlugs, projectsDir } from './resolve-log';
 
 const STAMPED = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(?:-\d+)?$/;
@@ -31,7 +31,7 @@ function handoffs(base: string): Handoff[] {
     let head = '';
     try { head = readFileSync(file, 'utf8').slice(0, 2000); } catch { /* unreadable: no name, no session */ }
     const session = basename(head.match(/^Transcript: (\S+\.jsonl)/m)?.[1] ?? '', '.jsonl') || undefined;
-    return [{ folder, file, created, name: nameInTitle(head), session }];
+    return [{ folder, file, created, name: nameWords(nameInTitle(head) ?? '') || undefined, session }];
   }).sort((a, b) => b.created - a.created || (a.folder < b.folder ? 1 : -1));
 }
 
@@ -74,8 +74,8 @@ function main(): void {
   // Words that name a handoff load it. Anything else is the user's first instruction, not a failed search.
   const said = words.join(' ').trim();
   const q = said.toLowerCase();
-  const asName = handoffName(said);
-  const named = said ? all.find((h) => (!!h.name && h.name === asName) || h.folder.startsWith(said) || handoffLabel(h.folder, now).toLowerCase().includes(q)) : undefined;
+  const asName = nameWords(said);
+  const named = said ? all.find((h) => (!!h.name && nameWords(h.name) === asName) || h.folder.startsWith(said) || handoffLabel(h.folder, now).toLowerCase().includes(q)) : undefined;
   const chosen = named ?? all[0];
   const text = readFileSync(chosen.file, 'utf8');
 
