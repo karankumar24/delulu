@@ -49,7 +49,7 @@ describe('save', () => {
     expect(r.stdout).toMatch(/^delulu saved this session: \w{3} \d{1,2} handoff$/m);
   });
 
-  it("names the handoff with the agent's name line, keeps it out of the summary, and never reuses a name", () => {
+  it("names the handoff with the agent's name line, keeps it out of the summary, and never reuses another session's name", () => {
     const { repo, log, base } = setup([user('fix the footer'), reply('Fixed.')]);
     mkdirSync(base);
     writeFileSync(join(base, 'note.md'), 'name: Footer fix, part one!\n\nFooter fixed. Next: ship.\n');
@@ -59,8 +59,24 @@ describe('save', () => {
     expect(out.split('\n')[0]).toMatch(/^# footer-fix-part-one · delulu-save-\S+ handoff · saved /);
     expect(out).toContain('pushed with git)\nFooter fixed. Next: ship.');
     expect(out).not.toContain('name:');
+    const other = join(repo, '..', `${repo.split('/').pop()}-other.jsonl`);
+    made.push(other);
+    writeFileSync(other, `${JSON.stringify(user('another window'))}\n`);
     writeFileSync(join(base, 'note.md'), '**Name:** footer fix part one\nSecond pass.\n');
-    expect(run(repo, log).stdout).toMatch(/^delulu saved this session: footer-fix-part-one-2$/m);
+    expect(run(repo, other).stdout).toMatch(/^delulu saved this session: footer-fix-part-one-2$/m);
+  });
+
+  it('replaces its own earlier handoff when the same session saves again, keeping the name', () => {
+    const { repo, log, base } = setup([user('fix the footer'), reply('Fixed.')]);
+    mkdirSync(base);
+    writeFileSync(join(base, 'note.md'), 'name: footer fix\n\nFirst pass.\n');
+    run(repo, log);
+    const [first] = folders(base);
+    writeFileSync(join(base, 'note.md'), 'name: footer fix\n\nSecond pass.\n');
+    expect(run(repo, log).stdout).toMatch(/^delulu saved this session: footer-fix$/m);
+    expect(folders(base)).toHaveLength(1);
+    expect(folders(base)[0]).not.toBe(first);
+    expect(readFileSync(join(base, folders(base)[0], 'handoff.md'), 'utf8')).toContain('Second pass.');
   });
 
   it('still saves when no note was written, and says so', () => {

@@ -1447,13 +1447,15 @@ function main() {
     }
   }
   const { name: chosenName, rest } = takeName(note);
+  const transcript = log.replace(homedir4(), "~");
+  const earlier = rest ? handoffFolders(base).filter((f) => f !== folder && savedFrom(join5(base, f)) === transcript) : [];
   const cleaned = handoffName(redact(named || chosenName));
-  const name = cleaned ? uniqueName(cleaned, base, folder) : "";
+  const name = cleaned ? uniqueName(cleaned, base, [folder, ...earlier]) : "";
   const out = renderHandoff({
     project: basename3(repo),
     name: name || void 0,
     savedAt: now,
-    transcript: log.replace(homedir4(), "~"),
+    transcript,
     folder,
     ex,
     note: rest || void 0,
@@ -1463,6 +1465,7 @@ function main() {
   writeFileSync2(join5(base, folder, "handoff.md"), out, { mode: 384 });
   const missed = writeImages(join5(base, folder), ex);
   if (note) rmSync(notePath, { force: true });
+  for (const f of earlier) rmSync(join5(base, f), { recursive: true, force: true });
   const lines = [`delulu saved this session: ${name || handoffLabel(folder, now)}`];
   if (!rest) lines.push(`No summary was written, so the next session gets the session without one, and no older handoff was removed. Write ${notePath.replace(`${repo}/`, "")} and save again to add it.`);
   if (ignored) lines.push(ignored);
@@ -1471,8 +1474,15 @@ function main() {
   process.stdout.write(`${lines.join("\n")}
 `);
 }
-function uniqueName(name, base, self) {
-  const taken = new Set(handoffFolders(base).filter((f) => f !== self).map((f) => {
+function savedFrom(folder) {
+  try {
+    return readFileSync4(join5(folder, "handoff.md"), "utf8").slice(0, 2e3).match(/^Transcript: (.+?) \(the whole session/m)?.[1];
+  } catch {
+    return void 0;
+  }
+}
+function uniqueName(name, base, skip) {
+  const taken = new Set(handoffFolders(base).filter((f) => !skip.includes(f)).map((f) => {
     try {
       return nameInTitle(readFileSync4(join5(base, f, "handoff.md"), "utf8").slice(0, 500));
     } catch {

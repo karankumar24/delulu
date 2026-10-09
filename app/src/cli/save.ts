@@ -98,13 +98,17 @@ function main(): void {
     }
   }
   const { name: chosenName, rest } = takeName(note);
+  const transcript = log.replace(homedir(), '~');
+  // This session's earlier handoffs, which a summarised save replaces: it holds all they did, and more.
+  const earlier = rest ? handoffFolders(base).filter((f) => f !== folder && savedFrom(join(base, f)) === transcript) : [];
   const cleaned = handoffName(redact(named || chosenName));
-  const name = cleaned ? uniqueName(cleaned, base, folder) : '';
-  const out = renderHandoff({ project: basename(repo), name: name || undefined, savedAt: now, transcript: log.replace(homedir(), '~'), folder, ex,
+  const name = cleaned ? uniqueName(cleaned, base, [folder, ...earlier]) : '';
+  const out = renderHandoff({ project: basename(repo), name: name || undefined, savedAt: now, transcript, folder, ex,
     note: rest || undefined, redact, repo: { branch, commit, uncommitted: dirty, commits } });
   writeFileSync(join(base, folder, 'handoff.md'), out, { mode: 0o600 });
   const missed = writeImages(join(base, folder), ex);
   if (note) rmSync(notePath, { force: true });
+  for (const f of earlier) rmSync(join(base, f), { recursive: true, force: true });
 
   const lines = [`delulu saved this session: ${name || handoffLabel(folder, now)}`];
   if (!rest) lines.push(`No summary was written, so the next session gets the session without one, and no older handoff was removed. Write ${notePath.replace(`${repo}/`, '')} and save again to add it.`);
@@ -115,9 +119,14 @@ function main(): void {
   process.stdout.write(`${lines.join('\n')}\n`);
 }
 
+/** The transcript a handoff was saved from, as its second line names it. */
+function savedFrom(folder: string): string | undefined {
+  try { return readFileSync(join(folder, 'handoff.md'), 'utf8').slice(0, 2000).match(/^Transcript: (.+?) \(the whole session/m)?.[1]; } catch { return undefined; }
+}
+
 /** The name, or the name with -2, -3 and so on when another handoff here already has it. */
-function uniqueName(name: string, base: string, self: string): string {
-  const taken = new Set(handoffFolders(base).filter((f) => f !== self).map((f) => {
+function uniqueName(name: string, base: string, skip: string[]): string {
+  const taken = new Set(handoffFolders(base).filter((f) => !skip.includes(f)).map((f) => {
     try { return nameInTitle(readFileSync(join(base, f, 'handoff.md'), 'utf8').slice(0, 500)); } catch { return undefined; }
   }));
   let n = 1;
