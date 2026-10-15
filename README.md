@@ -40,7 +40,7 @@ Sessions end. The context fills up, you hit a limit, or it's late. The next one 
 
 ## Two commands
 
-**`/delulu:handoff`** when you're done. It saves the session to one file in your repo.
+**`/delulu:handoff`** when you're done. It saves the session to a folder in your repo.
 
 **`/delulu:resume`** in the next session. It loads the latest save, tells you what changed in the repo since, and carries on.
 
@@ -50,7 +50,7 @@ Neither one asks you anything, and nothing runs in the background.
 
 - The agent's summary: where things stand, what was decided, and what's next. The next agent checks it against git before trusting it.
 - The state of your repo.
-- Every message you sent, word for word.
+- Every message you sent, word for word. For a `!` shell command, the command is kept but not its output.
 
 [See a full example.](docs/example-handoff.md)
 
@@ -70,7 +70,7 @@ If the commands don't show up, run `/reload-plugins`.
 
 ## Your data
 
-Everything stays on your machine, in `.delulu-handoff/` in your repo, and it's kept out of git. Keys and passwords are hidden, but your messages are copied as you wrote them, so read a handoff before you share it. [SECURITY.md](SECURITY.md) has the details.
+Everything stays on your machine, in `.delulu-handoff/` in your repo, and delulu adds that folder to your `.gitignore`. Common key and password formats are redacted (images are not), but your messages are copied as you wrote them, so read a handoff before you share it. [SECURITY.md](SECURITY.md) has the details.
 
 ## Contributing
 
